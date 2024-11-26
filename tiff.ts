@@ -1,5 +1,5 @@
 import * as THREE from "npm:three"
-import GeoTIFF, { fromArrayBuffer, GeoTIFFImage } from "npm:geotiff"
+import { fromArrayBuffer, GeoTIFF, GeoTIFFImage } from "npm:geotiff"
 
 interface GeoTiffData {
     data: Float32Array | Uint16Array | Uint8Array // Elevation data
@@ -12,7 +12,7 @@ async function loadGeoTiff(url: string): Promise<GeoTiffData> {
     const response = await fetch(url)
     const arrayBuffer = await response.arrayBuffer()
     console.log(`Converting ArrayBuffer to GeoTIFF`, arrayBuffer.byteLength)
-    const tiff: GeoTIFF.GeoTIFF = await fromArrayBuffer(arrayBuffer)
+    const tiff: GeoTIFF = await fromArrayBuffer(arrayBuffer)
     const image: GeoTIFFImage = await tiff.getImage()
     console.log(image)
     const width = image.getWidth()
@@ -27,11 +27,15 @@ function createElevationGeometry(
     data: Float32Array | Uint16Array | Uint8Array,
     width: number,
     height: number,
+    pixelSize: number, // Add pixel size (e.g., meters per pixel)
     scale: number = 1,
 ): THREE.PlaneGeometry {
+    const realWidth = pixelSize * (width - 1) // Real-world width
+    const realHeight = pixelSize * (height - 1) // Real-world height
+
     const geometry = new THREE.PlaneGeometry(
-        width,
-        height,
+        realWidth,
+        realHeight,
         width - 1,
         height - 1,
     )
@@ -40,10 +44,8 @@ function createElevationGeometry(
 
     for (let i = 0, j = 0; i < vertices.length; i += 3, j++) {
         let z = data[j] * scale
-        // Debug extreme values
         if (z < -10000 || z > 10000) {
-            //            console.warn(`Extreme elevation valu at index ${j}: ${z}`)
-            z = -0.1
+            z = -1
         }
         vertices[i + 2] = z
     }
@@ -57,8 +59,13 @@ function createElevationGeometry(
 // Main function to load and render
 export async function renderTiff(
     url: string,
-    scale: number,
-): Promise<THREE.Group> {
+    scale: number = 1,
+    pixelSize: number = 1,
+): Promise<{
+    sea: THREE.Mesh
+    terrain: THREE.Mesh
+    transform: (x: number, y: number) => [number, number]
+}> {
     const { data, width, height } = await loadGeoTiff(url)
 
     // Create the elevation geometry
@@ -66,13 +73,22 @@ export async function renderTiff(
         data,
         width,
         height,
+        pixelSize,
         scale,
     )
 
-    //const elevationMaterial = new THREE.MeshStandardMaterial({
-    //    color: 0x88cc88, // Green for terrain
-    //    wireframe: false,
+    //const textureLoader = new THREE.TextureLoader()
+    //const texture = textureLoader.load("texture.png")
+    //    texture.wrapS = THREE.ClampToEdgeWrapping
+    //    texture.wrapT = THREE.ClampToEdgeWrapping
+
+    // Create a material with the texture
+    //let elevationMaterial = new THREE.MeshPhongMaterial({
+    //    map: texture, // Apply the texture
+    //    shininess: 150,
+    //    specular: 0x111111,
     //})
+
     let elevationMaterial = new THREE.MeshPhongMaterial({
         color: 0x88cc88,
         shininess: 150,
@@ -84,7 +100,10 @@ export async function renderTiff(
     terrainMesh.castShadow = true
 
     // Create a flat geometry at sea level
-    const seaLevelGeometry = new THREE.PlaneGeometry(width, height)
+    const seaLevelGeometry = new THREE.PlaneGeometry(
+        width * pixelSize,
+        height * pixelSize,
+    )
 
     const seaLevelMaterial = new THREE.MeshStandardMaterial({
         color: 0x0000ff, // Blue for sea
@@ -97,11 +116,11 @@ export async function renderTiff(
     seaLevelMesh.position.set(0, 0, 0) // Centered at (0, 0, 0)
     seaLevelMesh.rotation.x = -Math.PI / 2 // Align the plane to match Three.js's world
 
-    // Group both meshes together
-    const group = new THREE.Group()
-    group.add(terrainMesh)
-    //group.add(overlayMesh)
-    group.add(seaLevelMesh)
+    const transform = (x: number, y: number) => [x, y]
 
-    return group
+    return {
+        sea: seaLevelMesh,
+        terrain: terrainMesh,
+        transform,
+    }
 }

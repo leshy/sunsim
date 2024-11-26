@@ -7890,7 +7890,6 @@ var TOUCH = { ROTATE: 0, PAN: 1, DOLLY_PAN: 2, DOLLY_ROTATE: 3 };
 var CullFaceNone = 0;
 var CullFaceBack = 1;
 var CullFaceFront = 2;
-var BasicShadowMap = 0;
 var PCFShadowMap = 1;
 var PCFSoftShadowMap = 2;
 var VSMShadowMap = 3;
@@ -31048,7 +31047,7 @@ async function fromArrayBuffer(arrayBuffer, signal) {
   return GeoTIFF.fromSource(makeBufferSource(arrayBuffer), signal);
 }
 
-// clientside/tiff.ts
+// tiff.ts
 async function loadGeoTiff(url) {
   console.log(`Fetching GeoTIFF from ${url}`);
   const response = await fetch(url);
@@ -31062,14 +31061,15 @@ async function loadGeoTiff(url) {
   const data = await image.readRasters({ interleave: true });
   return { data, width, height };
 }
-function createElevationGeometry(data, width, height, scale = 1) {
+function createElevationGeometry(data, width, height, pixelSize, scale = 1) {
+  const realWidth = pixelSize * (width - 1);
+  const realHeight = pixelSize * (height - 1);
   const geometry = new PlaneGeometry(
-    width,
-    height,
+    realWidth,
+    realHeight,
     width - 1,
     height - 1
   );
-  geometry.rotateX(-Math.PI / 2);
   const vertices = geometry.attributes.position.array;
   for (let i = 0, j = 0; i < vertices.length; i += 3, j++) {
     let z = data[j] * scale;
@@ -31079,32 +31079,45 @@ function createElevationGeometry(data, width, height, scale = 1) {
     vertices[i + 2] = z;
   }
   geometry.computeVertexNormals();
+  geometry.rotateX(-Math.PI / 2);
   return geometry;
 }
-async function renderTiff(url, scale) {
+async function renderTiff(url, scale = 1, pixelSize = 1) {
   const { data, width, height } = await loadGeoTiff(url);
-  const geometry = createElevationGeometry(data, width, height, scale);
-  const material = new MeshStandardMaterial({
+  const elevationGeometry = createElevationGeometry(
+    data,
+    width,
+    height,
+    pixelSize,
+    scale
+  );
+  let elevationMaterial = new MeshPhongMaterial({
     color: 8965256,
-    // Green for terrain
-    wireframe: false
+    shininess: 150,
+    specular: 1118481
   });
-  const terrainMesh = new Mesh(geometry, material);
-  const seaLevelGeometry = new PlaneGeometry(width, height);
+  const terrainMesh = new Mesh(elevationGeometry, elevationMaterial);
+  terrainMesh.receiveShadow = true;
+  terrainMesh.castShadow = true;
+  const seaLevelGeometry = new PlaneGeometry(
+    width * pixelSize,
+    height * pixelSize
+  );
   const seaLevelMaterial = new MeshStandardMaterial({
-    color: 255,
+    color: 255
     // Blue for sea
-    opacity: 0.5,
-    // Slight transparency
-    transparent: true
+    //opacity: 0.5, // Slight transparency
+    //transparent: true,
   });
   const seaLevelMesh = new Mesh(seaLevelGeometry, seaLevelMaterial);
   seaLevelMesh.position.set(0, 0, 0);
   seaLevelMesh.rotation.x = -Math.PI / 2;
-  const group = new Group();
-  group.add(terrainMesh);
-  group.add(seaLevelMesh);
-  return group;
+  const transform = (x, y) => [x, y];
+  return {
+    sea: seaLevelMesh,
+    terrain: terrainMesh,
+    transform
+  };
 }
 
 // clientside.ts
@@ -31114,7 +31127,6 @@ var renderer;
 var clock;
 var stats;
 var dirLight;
-var torusKnot;
 var cube;
 init2();
 function init2() {
@@ -31127,24 +31139,24 @@ function initScene() {
   camera = new PerspectiveCamera(
     45,
     window.innerWidth / window.innerHeight,
-    1,
-    1e3
+    100,
+    1e5
   );
-  camera.position.set(0, 15, 35);
+  camera.position.set(0, 7500, 0);
   scene = new Scene();
   scene.add(new AmbientLight(4210752, 3));
   dirLight = new DirectionalLight(16777215, 3);
   dirLight.name = "Dir. Light";
-  dirLight.position.set(10, 10, 10);
+  dirLight.position.set(100, 100, 100);
   dirLight.castShadow = true;
   dirLight.shadow.camera.near = 1;
-  dirLight.shadow.camera.far = 30;
-  dirLight.shadow.camera.right = 15;
-  dirLight.shadow.camera.left = -15;
-  dirLight.shadow.camera.top = 15;
-  dirLight.shadow.camera.bottom = -15;
-  dirLight.shadow.mapSize.width = 1024;
-  dirLight.shadow.mapSize.height = 1024;
+  dirLight.shadow.camera.far = 300;
+  dirLight.shadow.camera.right = 150;
+  dirLight.shadow.camera.left = -150;
+  dirLight.shadow.camera.top = 150;
+  dirLight.shadow.camera.bottom = -150;
+  dirLight.shadow.mapSize.width = 1024 * 10;
+  dirLight.shadow.mapSize.height = 1024 * 10;
   scene.add(dirLight);
   scene.add(new CameraHelper(dirLight.shadow.camera));
   let geometry = new TorusKnotGeometry(25, 8, 75, 20);
@@ -31153,34 +31165,22 @@ function initScene() {
     shininess: 150,
     specular: 2236962
   });
-  torusKnot = new Mesh(geometry, material);
-  torusKnot.scale.multiplyScalar(1 / 18);
-  torusKnot.position.y = 3;
-  torusKnot.castShadow = true;
-  torusKnot.receiveShadow = true;
-  scene.add(torusKnot);
   geometry = new BoxGeometry(3, 3, 3);
   cube = new Mesh(geometry, material);
-  cube.position.set(8, 3, 8);
+  cube.position.set(8, 15, 8);
   cube.castShadow = true;
   cube.receiveShadow = true;
   scene.add(cube);
-  geometry = new BoxGeometry(10, 0.15, 10);
+  geometry = new BoxGeometry(30, 0.15, 30);
   material = new MeshPhongMaterial({
     color: 10530223,
     shininess: 150,
     specular: 1118481
   });
-  const ground = new Mesh(geometry, material);
-  ground.scale.multiplyScalar(3);
-  ground.castShadow = false;
-  ground.receiveShadow = true;
-  scene.add(ground);
-  renderTiff("elevation.tiff", 0.1).then((mesh) => {
-    mesh.receiveShadow = true;
-    mesh.castShadow = true;
-    scene.add(mesh);
-    console.log("added mesh", mesh);
+  renderTiff("elevation.tiff", 2, 25).then(({ sea, terrain, transform }) => {
+    scene.add(sea);
+    scene.add(terrain);
+    console.log("added mesh", sea, terrain);
   });
 }
 function initMisc() {
@@ -31189,7 +31189,7 @@ function initMisc() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setAnimationLoop(animate);
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = BasicShadowMap;
+  renderer.shadowMap.type = PCFSoftShadowMap;
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(0, 2, 0);
   controls.update();
@@ -31212,9 +31212,6 @@ function renderScene() {
 function render() {
   const delta = clock.getDelta();
   renderScene();
-  torusKnot.rotation.x += 0.25 * delta * 0.25;
-  torusKnot.rotation.y += 2 * delta * 0.25;
-  torusKnot.rotation.z += 1 * delta * 0.25;
   cube.rotation.x += 0.25 * delta * 0.25;
   cube.rotation.y += 2 * delta * 0.25;
   cube.rotation.z += 1 * delta * 0.25;

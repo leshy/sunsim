@@ -1,11 +1,10 @@
 import * as THREE from "npm:three"
 import Stats from "npm:three/addons/libs/stats.module.js"
 import { OrbitControls } from "npm:three/addons/controls/OrbitControls.js"
-import { renderTiff } from "./clientside/tiff.ts"
+import { renderTiff } from "./tiff.ts"
 
 let camera, scene, renderer, clock, stats
-let dirLight
-let torusKnot, cube
+let dirLight, cube
 
 init()
 
@@ -21,10 +20,11 @@ function initScene() {
     camera = new THREE.PerspectiveCamera(
         45,
         window.innerWidth / window.innerHeight,
-        1,
-        1000,
+        100,
+        100000,
     )
-    camera.position.set(0, 300, 0)
+
+    camera.position.set(0, 7500, 0)
 
     scene = new THREE.Scene()
 
@@ -77,11 +77,12 @@ function initScene() {
     // ground.receiveShadow = true
     // scene.add(ground)
 
-    renderTiff("elevation.tiff", 0.075).then((mesh: THREE.Mesh) => {
+    renderTiff("elevation.tiff", 2, 25).then(({ sea, terrain, transform }) => {
         //mesh.receiveShadow = true
         //mesh.castShadow = false
-        scene.add(mesh)
-        console.log("added mesh", mesh)
+        scene.add(sea)
+        scene.add(terrain)
+        console.log("added mesh", sea, terrain)
     })
 }
 
