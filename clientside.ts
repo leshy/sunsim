@@ -24,7 +24,7 @@ function initScene() {
         1,
         1000,
     )
-    camera.position.set(0, 15, 35)
+    camera.position.set(0, 300, 0)
 
     scene = new THREE.Scene()
 
@@ -34,16 +34,16 @@ function initScene() {
 
     dirLight = new THREE.DirectionalLight(0xffffff, 3)
     dirLight.name = "Dir. Light"
-    dirLight.position.set(10, 10, 10)
+    dirLight.position.set(100, 100, 100)
     dirLight.castShadow = true
     dirLight.shadow.camera.near = 1
-    dirLight.shadow.camera.far = 30
-    dirLight.shadow.camera.right = 15
-    dirLight.shadow.camera.left = -15
-    dirLight.shadow.camera.top = 15
-    dirLight.shadow.camera.bottom = -15
-    dirLight.shadow.mapSize.width = 1024
-    dirLight.shadow.mapSize.height = 1024
+    dirLight.shadow.camera.far = 300
+    dirLight.shadow.camera.right = 150
+    dirLight.shadow.camera.left = -150
+    dirLight.shadow.camera.top = 150
+    dirLight.shadow.camera.bottom = -150
+    dirLight.shadow.mapSize.width = 1024 * 10
+    dirLight.shadow.mapSize.height = 1024 * 10
     scene.add(dirLight)
 
     scene.add(new THREE.CameraHelper(dirLight.shadow.camera))
@@ -56,36 +56,30 @@ function initScene() {
         specular: 0x222222,
     })
 
-    torusKnot = new THREE.Mesh(geometry, material)
-    torusKnot.scale.multiplyScalar(1 / 18)
-    torusKnot.position.y = 3
-    torusKnot.castShadow = true
-    torusKnot.receiveShadow = true
-    scene.add(torusKnot)
-
     geometry = new THREE.BoxGeometry(3, 3, 3)
     cube = new THREE.Mesh(geometry, material)
-    cube.position.set(8, 3, 8)
+    cube.position.set(8, 15, 8)
     cube.castShadow = true
     cube.receiveShadow = true
     scene.add(cube)
 
-    geometry = new THREE.BoxGeometry(10, 0.15, 10)
+    geometry = new THREE.BoxGeometry(30, 0.15, 30)
+
     material = new THREE.MeshPhongMaterial({
         color: 0xa0adaf,
         shininess: 150,
         specular: 0x111111,
     })
 
-    const ground = new THREE.Mesh(geometry, material)
-    ground.scale.multiplyScalar(3)
-    ground.castShadow = false
-    ground.receiveShadow = true
-    scene.add(ground)
+    // const ground = new THREE.Mesh(geometry, material)
+    // ground.scale.multiplyScalar(3)
+    // ground.castShadow = false
+    // ground.receiveShadow = true
+    // scene.add(ground)
 
-    renderTiff("elevation.tiff", 0.1).then((mesh: THREE.Mesh) => {
-        mesh.receiveShadow = true
-        mesh.castShadow = true
+    renderTiff("elevation.tiff", 0.075).then((mesh: THREE.Mesh) => {
+        //mesh.receiveShadow = true
+        //mesh.castShadow = false
         scene.add(mesh)
         console.log("added mesh", mesh)
     })
@@ -97,7 +91,7 @@ function initMisc() {
     renderer.setSize(window.innerWidth, window.innerHeight)
     renderer.setAnimationLoop(animate)
     renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.BasicShadowMap
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
 
     // Mouse control
     const controls = new OrbitControls(camera, renderer.domElement)
@@ -131,10 +125,6 @@ function render() {
     const delta = clock.getDelta()
 
     renderScene()
-
-    torusKnot.rotation.x += 0.25 * delta * 0.25
-    torusKnot.rotation.y += 2 * delta * 0.25
-    torusKnot.rotation.z += 1 * delta * 0.25
 
     cube.rotation.x += 0.25 * delta * 0.25
     cube.rotation.y += 2 * delta * 0.25

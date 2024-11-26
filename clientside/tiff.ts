@@ -43,12 +43,13 @@ function createElevationGeometry(
         // Debug extreme values
         if (z < -10000 || z > 10000) {
             //            console.warn(`Extreme elevation valu at index ${j}: ${z}`)
-            z = -1
+            z = -0.1
         }
         vertices[i + 2] = z
     }
 
     geometry.computeVertexNormals()
+    geometry.rotateX(-Math.PI / 2)
 
     return geometry
 }
@@ -61,19 +62,34 @@ export async function renderTiff(
     const { data, width, height } = await loadGeoTiff(url)
 
     // Create the elevation geometry
-    const geometry = createElevationGeometry(data, width, height, scale)
-    const material = new THREE.MeshStandardMaterial({
-        color: 0x88cc88, // Green for terrain
-        wireframe: false,
+    const elevationGeometry = createElevationGeometry(
+        data,
+        width,
+        height,
+        scale,
+    )
+
+    //const elevationMaterial = new THREE.MeshStandardMaterial({
+    //    color: 0x88cc88, // Green for terrain
+    //    wireframe: false,
+    //})
+    let elevationMaterial = new THREE.MeshPhongMaterial({
+        color: 0x88cc88,
+        shininess: 150,
+        specular: 0x111111,
     })
-    const terrainMesh = new THREE.Mesh(geometry, material)
+
+    const terrainMesh = new THREE.Mesh(elevationGeometry, elevationMaterial)
+    terrainMesh.receiveShadow = true
+    terrainMesh.castShadow = true
 
     // Create a flat geometry at sea level
     const seaLevelGeometry = new THREE.PlaneGeometry(width, height)
+
     const seaLevelMaterial = new THREE.MeshStandardMaterial({
         color: 0x0000ff, // Blue for sea
-        opacity: 0.5, // Slight transparency
-        transparent: true,
+        //opacity: 0.5, // Slight transparency
+        //transparent: true,
     })
     const seaLevelMesh = new THREE.Mesh(seaLevelGeometry, seaLevelMaterial)
 
@@ -84,6 +100,7 @@ export async function renderTiff(
     // Group both meshes together
     const group = new THREE.Group()
     group.add(terrainMesh)
+    //group.add(overlayMesh)
     group.add(seaLevelMesh)
 
     return group
