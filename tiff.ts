@@ -16,7 +16,6 @@ async function loadGeoTiff(url: string): Promise<GeoTIFFImage> {
 // Create geometry using elevation data
 async function createElevationGeometry(
     image: GeoTIFFImage,
-    pixelSize: number, // Add pixel size (e.g., meters per pixel)
     scale: number = 1,
 ): THREE.PlaneGeometry {
     const width = image.getWidth()
@@ -24,8 +23,14 @@ async function createElevationGeometry(
     const data: Float32Array | Uint16Array | Uint8Array = await image
         .readRasters({ interleave: true })
 
-    const realWidth = pixelSize * (width - 1) // Real-world width
-    const realHeight = pixelSize * (height - 1) // Real-world height
+    const resolution = image.getResolution()
+
+    if (resolution[2]) {
+        scale = resolution[2] * scale
+    }
+
+    const realWidth = Math.abs(resolution[0]) * (width - 1) // Real-world width
+    const realHeight = Math.abs(resolution[1]) * (height - 1) // Real-world height
 
     const geometry = new THREE.PlaneGeometry(
         realWidth,
@@ -50,38 +55,59 @@ async function createElevationGeometry(
     return geometry
 }
 
+type TextureBumpmap = {
+    map?: THREE.Texture
+    bumpMap?: THREE.Texture
+}
+
+function getTextureBumpamp(opts: RenderTiffOpts): TextureBumpmap {
+    const ret: TextureBumpmap = {}
+    const textureLoader = new THREE.TextureLoader()
+
+    if (opts.textureUrl) {
+        const texture = textureLoader.load(opts.textureUrl)
+        texture.wrapS = THREE.ClampToEdgeWrapping
+        texture.wrapT = THREE.ClampToEdgeWrapping
+        ret.map = texture
+    }
+
+    if (opts.bumpmapUrl) {
+        const bumpMap = textureLoader.load(opts.bumpmapUrl)
+        bumpMap.wrapS = THREE.ClampToEdgeWrapping
+        bumpMap.wrapT = THREE.ClampToEdgeWrapping
+        ret.bumpMap = bumpMap
+    }
+
+    return ret
+}
+
+export type RenderTiffOpts = {
+    textureUrl?: string
+    bumpmapUrl?: string
+    zScale?: number
+    genSea?: boolean
+}
+
 // Main function to load and render
 export async function renderTiff(
     url: string,
-    scale: number = 1,
-    pixelSize: number = 1,
+    opts: RenderTiffOpts = {},
 ): Promise<{
     sea: THREE.Mesh
     terrain: THREE.Mesh
     transform: (x: number, y: number) => [number, number]
 }> {
+    const ret = {}
     const image = await loadGeoTiff(url)
     // Create the elevation geometry
     const elevationGeometry = await createElevationGeometry(
         image,
-        pixelSize,
-        scale,
+        opts.zScale ? opts.zScale : 1,
     )
-
-    const textureLoader = new THREE.TextureLoader()
-    const texture = textureLoader.load("texture3.jpg")
-    texture.wrapS = THREE.ClampToEdgeWrapping
-    texture.wrapT = THREE.ClampToEdgeWrapping
-
-    // Load the bump map texture
-    const bumpMap = textureLoader.load("bump.jpg")
-    bumpMap.wrapS = THREE.ClampToEdgeWrapping
-    bumpMap.wrapT = THREE.ClampToEdgeWrapping
 
     // Create a material with the texture and bump map
     let elevationMaterial = new THREE.MeshStandardMaterial({
-        map: texture, // Apply the base texture
-        bumpMap: bumpMap, // Apply the bump map
+        ...getTextureBumpamp(opts),
         bumpScale: 1.5, // Control the intensity of the bump effect (adjust as needed)
     })
     // let elevationMaterial = new THREE.MeshPhongMaterial({
@@ -94,31 +120,34 @@ export async function renderTiff(
     terrainMesh.receiveShadow = true
     terrainMesh.castShadow = true
 
-    // Create a flat geometry at sea level
-    const seaLevelGeometry = new THREE.PlaneGeometry(
-        image.getWidth() * pixelSize,
-        image.getHeight() * pixelSize,
-    )
+    ret.terrain = terrainMesh
 
-    const seaLevelMaterial = new THREE.MeshPhongMaterial({
-        color: 0x284356, // Blue for sea
-        bumpMap: bumpMap, // Apply the bump map
-        bumpScale: 2,
-        shininess: 150,
-        opacity: 0.75, // Slight transparency
-        transparent: true,
-    })
+    if (opts.genSea) {
+        // Create a flat geometry at sea level
+        const seaLevelGeometry = new THREE.PlaneGeometry(
+            terrainMesh.geometry.parameters.width,
+            terrainMesh.geometry.parameters.height,
+            image.getWidth(),
+            image.getHeight(),
+        )
 
-    const seaLevelMesh = new THREE.Mesh(seaLevelGeometry, seaLevelMaterial)
+        const seaLevelMaterial = new THREE.MeshPhongMaterial({
+            color: 0x284356, // Blue for sea
+            bumpScale: 2,
+            shininess: 150,
+            opacity: 0.75, // Slight transparency
+            transparent: true,
+            ...getTextureBumpamp(opts),
+        })
 
-    // Position the sea level mesh to align with the terrain
-    seaLevelMesh.position.set(0, 0, 0) // Centered at (0, 0, 0)
-    seaLevelMesh.rotation.x = -Math.PI / 2 // Align the plane to match Three.js's world
+        const seaLevelMesh = new THREE.Mesh(seaLevelGeometry, seaLevelMaterial)
 
-    const transform = (x: number, y: number) => [x, y]
-
-    return {
-        sea: seaLevelMesh,
-        terrain: terrainMesh,
+        // Position the sea level mesh to align with the terrain
+        seaLevelMesh.position.set(0, 0, 0) // Centered at (0, 0, 0)
+        seaLevelMesh.rotation.x = -Math.PI / 2
+        // Align the plane to match Three.js's world
+        ret.sea = seaLevelMesh
     }
+
+    return ret
 }

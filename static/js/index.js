@@ -31140,12 +31140,16 @@ async function loadGeoTiff(url) {
   console.log(image);
   return image;
 }
-async function createElevationGeometry(image, pixelSize, scale = 1) {
+async function createElevationGeometry(image, scale = 1) {
   const width = image.getWidth();
   const height = image.getHeight();
   const data = await image.readRasters({ interleave: true });
-  const realWidth = pixelSize * (width - 1);
-  const realHeight = pixelSize * (height - 1);
+  const resolution = image.getResolution();
+  if (resolution[2]) {
+    scale = resolution[2] * scale;
+  }
+  const realWidth = Math.abs(resolution[0]) * (width - 1);
+  const realHeight = Math.abs(resolution[1]) * (height - 1);
   const geometry = new PlaneGeometry(
     realWidth,
     realHeight,
@@ -31164,54 +31168,62 @@ async function createElevationGeometry(image, pixelSize, scale = 1) {
   geometry.rotateX(-Math.PI / 2);
   return geometry;
 }
-async function renderTiff(url, scale = 1, pixelSize = 1) {
+function getTextureBumpamp(opts) {
+  const ret = {};
+  const textureLoader = new TextureLoader();
+  if (opts.textureUrl) {
+    const texture = textureLoader.load(opts.textureUrl);
+    texture.wrapS = ClampToEdgeWrapping;
+    texture.wrapT = ClampToEdgeWrapping;
+    ret.map = texture;
+  }
+  if (opts.bumpmapUrl) {
+    const bumpMap = textureLoader.load(opts.bumpmapUrl);
+    bumpMap.wrapS = ClampToEdgeWrapping;
+    bumpMap.wrapT = ClampToEdgeWrapping;
+    ret.bumpMap = bumpMap;
+  }
+  return ret;
+}
+async function renderTiff(url, opts = {}) {
+  const ret = {};
   const image = await loadGeoTiff(url);
   const elevationGeometry = await createElevationGeometry(
     image,
-    pixelSize,
-    scale
+    opts.zScale ? opts.zScale : 1
   );
-  const textureLoader = new TextureLoader();
-  const texture = textureLoader.load("texture3.jpg");
-  texture.wrapS = ClampToEdgeWrapping;
-  texture.wrapT = ClampToEdgeWrapping;
-  const bumpMap = textureLoader.load("bump.jpg");
-  bumpMap.wrapS = ClampToEdgeWrapping;
-  bumpMap.wrapT = ClampToEdgeWrapping;
   let elevationMaterial = new MeshStandardMaterial({
-    map: texture,
-    // Apply the base texture
-    bumpMap,
-    // Apply the bump map
+    ...getTextureBumpamp(opts),
     bumpScale: 1.5
     // Control the intensity of the bump effect (adjust as needed)
   });
   const terrainMesh = new Mesh(elevationGeometry, elevationMaterial);
   terrainMesh.receiveShadow = true;
   terrainMesh.castShadow = true;
-  const seaLevelGeometry = new PlaneGeometry(
-    image.getWidth() * pixelSize,
-    image.getHeight() * pixelSize
-  );
-  const seaLevelMaterial = new MeshPhongMaterial({
-    color: 2638678,
-    // Blue for sea
-    bumpMap,
-    // Apply the bump map
-    bumpScale: 2,
-    shininess: 150,
-    opacity: 0.75,
-    // Slight transparency
-    transparent: true
-  });
-  const seaLevelMesh = new Mesh(seaLevelGeometry, seaLevelMaterial);
-  seaLevelMesh.position.set(0, 0, 0);
-  seaLevelMesh.rotation.x = -Math.PI / 2;
-  const transform = (x, y) => [x, y];
-  return {
-    sea: seaLevelMesh,
-    terrain: terrainMesh
-  };
+  ret.terrain = terrainMesh;
+  if (opts.genSea) {
+    const seaLevelGeometry = new PlaneGeometry(
+      terrainMesh.geometry.parameters.width,
+      terrainMesh.geometry.parameters.height,
+      image.getWidth(),
+      image.getHeight()
+    );
+    const seaLevelMaterial = new MeshPhongMaterial({
+      color: 2638678,
+      // Blue for sea
+      bumpScale: 2,
+      shininess: 150,
+      opacity: 0.75,
+      // Slight transparency
+      transparent: true,
+      ...getTextureBumpamp(opts)
+    });
+    const seaLevelMesh = new Mesh(seaLevelGeometry, seaLevelMaterial);
+    seaLevelMesh.position.set(0, 0, 0);
+    seaLevelMesh.rotation.x = -Math.PI / 2;
+    ret.sea = seaLevelMesh;
+  }
+  return ret;
 }
 
 // clientside.ts
@@ -31271,10 +31283,14 @@ function initScene() {
     shininess: 150,
     specular: 1118481
   });
-  renderTiff("elevation2.tiff", 1, 25).then(({ terrain, sea }) => {
+  renderTiff("elevation2.tiff", {
+    zScale: 1.5,
+    textureUrl: "texture3.jpg",
+    bumpmapUrl: "bump.jpg",
+    genSea: true
+  }).then(({ terrain, sea }) => {
     scene.add(sea);
     scene.add(terrain);
-    console.log("added mesh", terrain);
   });
 }
 function initMisc() {

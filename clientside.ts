@@ -82,17 +82,25 @@ function initScene() {
     // ground.receiveShadow = true
     // scene.add(ground)
 
-    //    renderTiff("elevation2.tiff", 1.5, 25).then(({ terrain, sea }) => {
-    renderDualResolutionTerrain(
-        "elevation2.tiff",
-        "elevationHighres.tiff",
-        1,
-    ).then(({ baseTerrain, highResTerrain, sea }) => {
+    renderTiff("elevation2.tiff", {
+        zScale: 1.5,
+        textureUrl: "texture3.jpg",
+        bumpmapUrl: "bump.jpg",
+        genSea: true,
+    }).then(({ terrain, sea }) => {
         scene.add(sea)
-        scene.add(baseTerrain)
-        scene.add(highResTerrain)
-        console.log("added mesh", terrain)
+        scene.add(terrain)
     })
+
+    // renderDualResolutionTerrain(
+    //     "elevation2.tiff",
+    //     "elevationHighres.tiff",
+    //     1,
+    // ).then(({ baseTerrain, highResTerrain, sea }) => {
+    //     scene.add(sea)
+    //     scene.add(baseTerrain)
+    //     scene.add(highResTerrain)
+    // })
 }
 
 function initMisc() {
