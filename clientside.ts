@@ -29,12 +29,11 @@ function initScene() {
     scene = new THREE.Scene()
 
     // Lights
+    scene.add(new THREE.AmbientLight(0x404040, 1))
 
-    scene.add(new THREE.AmbientLight(0x404040, 3))
-
-    dirLight = new THREE.DirectionalLight(0xffffff, 3)
+    dirLight = new THREE.DirectionalLight(0xfeffed, 3)
     dirLight.name = "Dir. Light"
-    dirLight.position.set(100, 100, 100)
+    dirLight.position.set(10000, 10000, 10000)
     dirLight.castShadow = true
     dirLight.shadow.camera.near = 1
     dirLight.shadow.camera.far = 300
@@ -63,6 +62,11 @@ function initScene() {
     cube.receiveShadow = true
     scene.add(cube)
 
+    // geometry = new THREE.BoxGeometry(10000, 10000, 10000)
+    // const cube2 = new THREE.Mesh(geometry, material)
+    // cube2.position.set(8, 15, 8)
+    // scene.add(cube2)
+
     geometry = new THREE.BoxGeometry(30, 0.15, 30)
 
     material = new THREE.MeshPhongMaterial({
@@ -77,12 +81,10 @@ function initScene() {
     // ground.receiveShadow = true
     // scene.add(ground)
 
-    renderTiff("elevation.tiff", 2, 25).then(({ sea, terrain, transform }) => {
-        //mesh.receiveShadow = true
-        //mesh.castShadow = false
+    renderTiff("elevation2.tiff", 1, 25).then(({ terrain, sea }) => {
         scene.add(sea)
         scene.add(terrain)
-        console.log("added mesh", sea, terrain)
+        console.log("added mesh", terrain)
     })
 }
 
@@ -91,6 +93,8 @@ function initMisc() {
     renderer.setPixelRatio(window.devicePixelRatio)
     renderer.setSize(window.innerWidth, window.innerHeight)
     renderer.setAnimationLoop(animate)
+    renderer.physicallyCorrectLights = true // Use physically accurate lighting
+
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
 
@@ -122,12 +126,46 @@ function renderScene() {
     renderer.render(scene, camera)
 }
 
+const SUN_RADIUS = 15000 // Distance of the sun (light) from the scene
+let sunAngle = 0
+// Utility to interpolate between two colors
+function blendColors(color1, color2, factor) {
+    const c1 = new THREE.Color(color1)
+    const c2 = new THREE.Color(color2)
+    return c1.lerp(c2, factor)
+}
+
 function render() {
     const delta = clock.getDelta()
 
     renderScene()
 
+    // Animate cube rotations
     cube.rotation.x += 0.25 * delta * 0.25
     cube.rotation.y += 2 * delta * 0.25
     cube.rotation.z += 1 * delta * 0.25
+
+    // // Simulate sun movement
+    // sunAngle += delta * 0.25 // Adjust speed of the sun's rotation
+
+    // // Skip the "night" portion
+    // if (sunAngle > Math.PI) {
+    //     sunAngle = 0 // Jump back to sunrise
+    // }
+
+    // // Update light position
+    // dirLight.position.set(
+    //     SUN_RADIUS * Math.cos(sunAngle), // X (orbit)
+    //     SUN_RADIUS * Math.sin(sunAngle), // Y (orbit)
+    //     1000, // Z (elevation)
+    // )
+
+    // // Adjust light color and intensity based on sun angle
+    // const t = sunAngle / Math.PI // Normalize the sunAngle to [0, 1]
+    // const r = 0xfe * (1 - t) + 0xfe * t // Red fades from 0xfe to 0xfe (unchanged)
+    // const g = 0xff * (1 - t) + 0xff * t // Green fades from 0xff to 0xff (unchanged)
+    // const b = 0xed // Blue stays constant
+
+    // dirLight.color.setRGB(r / 255, g / 255, b / 255) // Set smooth RGB transition
+    // dirLight.intensity = 0.5 + t * 2.5 // Smooth intensity increase
 }

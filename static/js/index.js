@@ -27119,6 +27119,24 @@ StringKeyframeTrack.prototype.InterpolantFactoryMethodSmooth = void 0;
 var VectorKeyframeTrack = class extends KeyframeTrack {
 };
 VectorKeyframeTrack.prototype.ValueTypeName = "vector";
+var Cache = {
+  enabled: false,
+  files: {},
+  add: function(key, file) {
+    if (this.enabled === false) return;
+    this.files[key] = file;
+  },
+  get: function(key) {
+    if (this.enabled === false) return;
+    return this.files[key];
+  },
+  remove: function(key) {
+    delete this.files[key];
+  },
+  clear: function() {
+    this.files = {};
+  }
+};
 var LoadingManager = class {
   constructor(onLoad, onProgress, onError) {
     const scope = this;
@@ -27233,6 +27251,69 @@ var Loader = class {
   }
 };
 Loader.DEFAULT_MATERIAL_NAME = "__DEFAULT";
+var ImageLoader = class extends Loader {
+  constructor(manager) {
+    super(manager);
+  }
+  load(url, onLoad, onProgress, onError) {
+    if (this.path !== void 0) url = this.path + url;
+    url = this.manager.resolveURL(url);
+    const scope = this;
+    const cached = Cache.get(url);
+    if (cached !== void 0) {
+      scope.manager.itemStart(url);
+      setTimeout(function() {
+        if (onLoad) onLoad(cached);
+        scope.manager.itemEnd(url);
+      }, 0);
+      return cached;
+    }
+    const image = createElementNS("img");
+    function onImageLoad() {
+      removeEventListeners();
+      Cache.add(url, this);
+      if (onLoad) onLoad(this);
+      scope.manager.itemEnd(url);
+    }
+    function onImageError(event) {
+      removeEventListeners();
+      if (onError) onError(event);
+      scope.manager.itemError(url);
+      scope.manager.itemEnd(url);
+    }
+    function removeEventListeners() {
+      image.removeEventListener("load", onImageLoad, false);
+      image.removeEventListener("error", onImageError, false);
+    }
+    image.addEventListener("load", onImageLoad, false);
+    image.addEventListener("error", onImageError, false);
+    if (url.slice(0, 5) !== "data:") {
+      if (this.crossOrigin !== void 0) image.crossOrigin = this.crossOrigin;
+    }
+    scope.manager.itemStart(url);
+    image.src = url;
+    return image;
+  }
+};
+var TextureLoader = class extends Loader {
+  constructor(manager) {
+    super(manager);
+  }
+  load(url, onLoad, onProgress, onError) {
+    const texture = new Texture();
+    const loader = new ImageLoader(this.manager);
+    loader.setCrossOrigin(this.crossOrigin);
+    loader.setPath(this.path);
+    loader.load(url, function(image) {
+      texture.image = image;
+      texture.needsUpdate = true;
+      if (onLoad !== void 0) {
+        onLoad(texture);
+      }
+    }, onProgress, onError);
+    return texture;
+  }
+};
 var Light = class extends Object3D {
   constructor(color, intensity = 1) {
     super();
@@ -31055,13 +31136,14 @@ async function loadGeoTiff(url) {
   console.log(`Converting ArrayBuffer to GeoTIFF`, arrayBuffer.byteLength);
   const tiff = await fromArrayBuffer(arrayBuffer);
   const image = await tiff.getImage();
+  window.image = image;
   console.log(image);
+  return image;
+}
+async function createElevationGeometry(image, pixelSize, scale = 1) {
   const width = image.getWidth();
   const height = image.getHeight();
   const data = await image.readRasters({ interleave: true });
-  return { data, width, height };
-}
-function createElevationGeometry(data, width, height, pixelSize, scale = 1) {
   const realWidth = pixelSize * (width - 1);
   const realHeight = pixelSize * (height - 1);
   const geometry = new PlaneGeometry(
@@ -31083,31 +31165,44 @@ function createElevationGeometry(data, width, height, pixelSize, scale = 1) {
   return geometry;
 }
 async function renderTiff(url, scale = 1, pixelSize = 1) {
-  const { data, width, height } = await loadGeoTiff(url);
-  const elevationGeometry = createElevationGeometry(
-    data,
-    width,
-    height,
+  const image = await loadGeoTiff(url);
+  const elevationGeometry = await createElevationGeometry(
+    image,
     pixelSize,
     scale
   );
-  let elevationMaterial = new MeshPhongMaterial({
-    color: 8965256,
-    shininess: 150,
-    specular: 1118481
+  const textureLoader = new TextureLoader();
+  const texture = textureLoader.load("texture3.jpg");
+  texture.wrapS = ClampToEdgeWrapping;
+  texture.wrapT = ClampToEdgeWrapping;
+  const bumpMap = textureLoader.load("bump.jpg");
+  bumpMap.wrapS = ClampToEdgeWrapping;
+  bumpMap.wrapT = ClampToEdgeWrapping;
+  let elevationMaterial = new MeshStandardMaterial({
+    map: texture,
+    // Apply the base texture
+    bumpMap,
+    // Apply the bump map
+    bumpScale: 1.5
+    // Control the intensity of the bump effect (adjust as needed)
   });
   const terrainMesh = new Mesh(elevationGeometry, elevationMaterial);
   terrainMesh.receiveShadow = true;
   terrainMesh.castShadow = true;
   const seaLevelGeometry = new PlaneGeometry(
-    width * pixelSize,
-    height * pixelSize
+    image.getWidth() * pixelSize,
+    image.getHeight() * pixelSize
   );
-  const seaLevelMaterial = new MeshStandardMaterial({
-    color: 255
+  const seaLevelMaterial = new MeshPhongMaterial({
+    color: 2638678,
     // Blue for sea
-    //opacity: 0.5, // Slight transparency
-    //transparent: true,
+    bumpMap,
+    // Apply the bump map
+    bumpScale: 2,
+    shininess: 150,
+    opacity: 0.75,
+    // Slight transparency
+    transparent: true
   });
   const seaLevelMesh = new Mesh(seaLevelGeometry, seaLevelMaterial);
   seaLevelMesh.position.set(0, 0, 0);
@@ -31115,8 +31210,7 @@ async function renderTiff(url, scale = 1, pixelSize = 1) {
   const transform = (x, y) => [x, y];
   return {
     sea: seaLevelMesh,
-    terrain: terrainMesh,
-    transform
+    terrain: terrainMesh
   };
 }
 
@@ -31144,10 +31238,10 @@ function initScene() {
   );
   camera.position.set(0, 7500, 0);
   scene = new Scene();
-  scene.add(new AmbientLight(4210752, 3));
-  dirLight = new DirectionalLight(16777215, 3);
+  scene.add(new AmbientLight(4210752, 1));
+  dirLight = new DirectionalLight(16711661, 3);
   dirLight.name = "Dir. Light";
-  dirLight.position.set(100, 100, 100);
+  dirLight.position.set(1e4, 1e4, 1e4);
   dirLight.castShadow = true;
   dirLight.shadow.camera.near = 1;
   dirLight.shadow.camera.far = 300;
@@ -31177,10 +31271,10 @@ function initScene() {
     shininess: 150,
     specular: 1118481
   });
-  renderTiff("elevation.tiff", 2, 25).then(({ sea, terrain, transform }) => {
+  renderTiff("elevation2.tiff", 1, 25).then(({ terrain, sea }) => {
     scene.add(sea);
     scene.add(terrain);
-    console.log("added mesh", sea, terrain);
+    console.log("added mesh", terrain);
   });
 }
 function initMisc() {
@@ -31188,6 +31282,7 @@ function initMisc() {
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setAnimationLoop(animate);
+  renderer.physicallyCorrectLights = true;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
   const controls = new OrbitControls(camera, renderer.domElement);
