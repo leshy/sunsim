@@ -2,7 +2,6 @@ import * as THREE from "npm:three"
 import Stats from "npm:three/addons/libs/stats.module.js"
 import { OrbitControls } from "npm:three/addons/controls/OrbitControls.js"
 import { renderTiff } from "./tiff.ts"
-import { renderDualResolutionTerrain } from "./tiffmulti.ts"
 
 let camera, scene, renderer, clock, stats
 let dirLight, cube
@@ -92,15 +91,9 @@ function initScene() {
         scene.add(terrain)
     })
 
-    // renderDualResolutionTerrain(
-    //     "elevation2.tiff",
-    //     "elevationHighres.tiff",
-    //     1,
-    // ).then(({ baseTerrain, highResTerrain, sea }) => {
-    //     scene.add(sea)
-    //     scene.add(baseTerrain)
-    //     scene.add(highResTerrain)
-    // })
+    renderTiff("elevationHighres2.tiff", { zScale: 1 }).then(({ terrain }) => {
+        scene.add(terrain)
+    })
 }
 
 function initMisc() {

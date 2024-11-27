@@ -88,17 +88,20 @@ export type RenderTiffOpts = {
     genSea?: boolean
 }
 
+export type RenderTiffOutput = {
+    terrain: THREE.Mesh
+    tiff: GeoTIFFImage
+    sea?: THREE.Mesh
+}
+
 // Main function to load and render
 export async function renderTiff(
     url: string,
     opts: RenderTiffOpts = {},
-): Promise<{
-    sea: THREE.Mesh
-    terrain: THREE.Mesh
-    transform: (x: number, y: number) => [number, number]
-}> {
-    const ret = {}
+): Promise<RenderTiffOutput> {
     const image = await loadGeoTiff(url)
+    const ret: Partial<RenderTiffOutput> = { tiff: image }
+
     // Create the elevation geometry
     const elevationGeometry = await createElevationGeometry(
         image,
@@ -110,6 +113,7 @@ export async function renderTiff(
         ...getTextureBumpamp(opts),
         bumpScale: 1.5, // Control the intensity of the bump effect (adjust as needed)
     })
+
     // let elevationMaterial = new THREE.MeshPhongMaterial({
     //     color: 0x88cc88,
     //     shininess: 150,
