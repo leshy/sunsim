@@ -9,9 +9,7 @@ app.set("views", "views")
 app.use(express.static("static"))
 
 app.get("/", (_: express.Request, res: express.Response) => {
-  res.render("index.ejs", {
-    title: "EJS example",
-  })
+  res.render("index.ejs", {})
 })
 
 console.log("app listening")

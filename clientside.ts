@@ -1,179 +1,239 @@
 import * as THREE from "npm:three"
 import Stats from "npm:three/addons/libs/stats.module.js"
 import { OrbitControls } from "npm:three/addons/controls/OrbitControls.js"
+import { EffectComposer } from "npm:three/addons/postprocessing/EffectComposer.js"
+import { RenderPass } from "npm:three/addons/postprocessing/RenderPass.js"
+import { UnrealBloomPass } from "npm:three/addons/postprocessing/UnrealBloomPass.js"
+import { FilmPass } from "npm:three/addons/postprocessing/FilmPass.js"
+import { ShaderPass } from "npm:three/addons/postprocessing/ShaderPass.js"
+import { FXAAShader } from "npm:three/addons/shaders/FXAAShader.js"
+import { GammaCorrectionShader } from "npm:three/addons/shaders/GammaCorrectionShader.js"
+
 import { renderTiff } from "./tiff.ts"
+window.THREE = THREE
 
-let camera, scene, renderer, clock, stats
-let dirLight, cube
+class SceneManager {
+    private camera: THREE.PerspectiveCamera
+    private scene: THREE.Scene
+    private renderer: THREE.WebGLRenderer
+    private composer: EffectComposer
+    private clock: THREE.Clock
+    private stats: Stats
+    private dirLight: THREE.DirectionalLight
+    private ambientLight: THREE.AmbientLight
+    private cube: THREE.Mesh
+    private readonly SUN_RADIUS: number = 15000
+    private controls: OrbitControls
 
-init()
+    constructor() {
+        this.init()
+    }
 
-function init() {
-    initScene()
-    initMisc()
+    private init(): void {
+        this.initScene()
+        this.initRenderer()
+        this.initPostProcessing()
+        this.initControls()
+        this.initStats()
 
-    document.body.appendChild(renderer.domElement)
-    window.addEventListener("resize", onWindowResize)
+        document.body.appendChild(this.renderer.domElement)
+        window.addEventListener("resize", () => this.onWindowResize())
+    }
+
+    private initScene(): void {
+        this.camera = new THREE.PerspectiveCamera(
+            45,
+            window.innerWidth / window.innerHeight,
+            20,
+            100000,
+        )
+        this.camera.position.set(0, 0, 12500)
+        this.camera.up.set(0, 0, 1)
+
+        this.scene = new THREE.Scene()
+        //this.scene.fog = new THREE.Fog(0xcccccc, 100, 15000)
+
+        this.setupLights()
+        this.setupGeometry()
+        this.loadTerrains()
+    }
+
+    private initPostProcessing(): void {
+        this.composer = new EffectComposer(this.renderer)
+
+        // Regular scene render
+        const renderPass = new RenderPass(this.scene, this.camera)
+        this.composer.addPass(renderPass)
+
+        // Bloom effect
+        // const bloomPass = new UnrealBloomPass(
+        //     new THREE.Vector2(window.innerWidth, window.innerHeight),
+        //     1.0,
+        //     0.4,
+        //     0.85,
+        // )
+        // this.composer.addPass(bloomPass)
+
+        // Film grain effect
+        //const filmPass = new FilmPass(0.35, 0.025, 648, false)
+        //this.composer.addPass(filmPass)
+
+        // FXAA anti-aliasing
+        // const fxaaPass = new ShaderPass(FXAAShader)
+        // fxaaPass.material.uniforms["resolution"].value.set(
+        //     1 / window.innerWidth,
+        //     1 / window.innerHeight,
+        // )
+        // //fxaaPass.uniforms["gamma"].value = 0.85 // Adjust this value to control brightness
+        // window.fxaa = fxaaPass
+        //this.composer.addPass(fxaaPass)
+
+        // FXAA anti-aliasing
+        const gammaPass = new ShaderPass(GammaCorrectionShader)
+        this.composer.addPass(gammaPass)
+    }
+
+    private setupLights(): void {
+        this.ambientLight = new THREE.AmbientLight(0x404040, 2)
+        this.scene.add(this.ambientLight)
+
+        this.dirLight = new THREE.DirectionalLight(0xfeffed, 4)
+        this.dirLight.name = "Dir. Light"
+        this.dirLight.position.set(15000, -15000, 7500)
+        this.configureDirectionalLight()
+
+        this.scene.add(this.dirLight)
+        this.scene.add(new THREE.CameraHelper(this.dirLight.shadow.camera))
+    }
+
+    private configureDirectionalLight(): void {
+        this.dirLight.castShadow = true
+        this.dirLight.shadow.camera.near = 1
+        this.dirLight.shadow.camera.far = 300
+        this.dirLight.shadow.camera.right = 150
+        this.dirLight.shadow.camera.left = -150
+        this.dirLight.shadow.camera.top = 150
+        this.dirLight.shadow.camera.bottom = -150
+        this.dirLight.shadow.mapSize.width = 1024 * 10
+        this.dirLight.shadow.mapSize.height = 1024 * 10
+    }
+
+    private setupGeometry(): void {
+        const material = new THREE.MeshPhongMaterial({
+            color: 0xff0000,
+            shininess: 150,
+            specular: 0x222222,
+        })
+
+        const geometry = new THREE.BoxGeometry(30, 30, 30)
+        this.cube = new THREE.Mesh(geometry, material)
+        this.cube.position.set(8, 150, 8)
+        this.cube.castShadow = true
+        this.cube.receiveShadow = true
+        this.scene.add(this.cube)
+    }
+
+    private async loadTerrains(): Promise<void> {
+        try {
+            const terrain1Result = await renderTiff("elevation.tiff", {
+                zScale: 1,
+                textureUrl: "elevation.jpg",
+                bumpmapUrl: "elevationBump.jpg",
+                genSea: true,
+                bumpScale: 1.5,
+            })
+
+            const terrain2Result = await renderTiff("elevationHighres.tiff", {
+                zScale: 1,
+                textureUrl: "elevationHighres4.jpg",
+                bumpmapUrl: "elevationHighresBump.jpg",
+            })
+
+            if (terrain1Result.sea) {
+                this.scene.add(terrain1Result.sea)
+            }
+
+            this.scene.add(terrain1Result.terrain)
+            this.scene.add(terrain2Result.terrain)
+
+            window.terrain2 = terrain2Result.terrain
+            terrain2Result.terrain.position.set(-2220, 1370, -44)
+        } catch (error) {
+            console.error("Error loading terrains:", error)
+        }
+    }
+
+    private initRenderer(): void {
+        this.renderer = new THREE.WebGLRenderer({ antialias: true })
+        this.renderer.setPixelRatio(window.devicePixelRatio)
+        this.renderer.setSize(window.innerWidth, window.innerHeight)
+
+        this.renderer.setAnimationLoop(() => this.animate())
+        this.renderer.physicallyCorrectLights = true
+        this.renderer.shadowMap.enabled = true
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+
+        this.clock = new THREE.Clock()
+    }
+
+    private initControls(): void {
+        this.controls = new OrbitControls(
+            this.camera,
+            this.renderer.domElement,
+        )
+
+        this.controls.target.set(-2220, 1370, -44)
+        this.controls.update()
+    }
+
+    private initStats(): void {
+        this.stats = new Stats()
+        document.body.appendChild(this.stats.dom)
+    }
+
+    private onWindowResize(): void {
+        this.camera.aspect = window.innerWidth / window.innerHeight
+        this.camera.updateProjectionMatrix()
+        this.renderer.setSize(window.innerWidth, window.innerHeight)
+        this.composer.setSize(window.innerWidth, window.innerHeight)
+
+        // Update FXAA uniforms
+        const fxaaPass = this.composer.passes.find(
+            (pass) =>
+                pass instanceof ShaderPass &&
+                pass.material.uniforms["resolution"],
+        ) as ShaderPass
+        if (fxaaPass) {
+            fxaaPass.material.uniforms["resolution"].value.set(
+                1 / window.innerWidth,
+                1 / window.innerHeight,
+            )
+        }
+    }
+
+    private animate(): void {
+        this.render()
+        this.stats.update()
+    }
+
+    private render(): void {
+        const delta = this.clock.getDelta()
+
+        // Use composer instead of renderer
+        this.composer.render()
+
+        this.cube.rotation.x += 0.25 * delta * 0.25
+        this.cube.rotation.y += 2 * delta * 0.25
+        this.cube.rotation.z += 1 * delta * 0.25
+    }
+
+    public dispose(): void {
+        window.removeEventListener("resize", () => this.onWindowResize())
+        this.controls.dispose()
+        this.renderer.dispose()
+        this.composer.dispose()
+        this.stats.dom.remove()
+    }
 }
 
-function initScene() {
-    camera = new THREE.PerspectiveCamera(
-        45,
-        window.innerWidth / window.innerHeight,
-        100,
-        100000,
-    )
-
-    camera.position.set(0, 7500, 0)
-
-    scene = new THREE.Scene()
-
-    // Lights
-    scene.add(new THREE.AmbientLight(0x404040, 1))
-
-    dirLight = new THREE.DirectionalLight(0xfeffed, 3)
-    dirLight.name = "Dir. Light"
-    dirLight.position.set(10000, 10000, 10000)
-    dirLight.castShadow = true
-    dirLight.shadow.camera.near = 1
-    dirLight.shadow.camera.far = 300
-    dirLight.shadow.camera.right = 150
-    dirLight.shadow.camera.left = -150
-    dirLight.shadow.camera.top = 150
-    dirLight.shadow.camera.bottom = -150
-    dirLight.shadow.mapSize.width = 1024 * 10
-    dirLight.shadow.mapSize.height = 1024 * 10
-    scene.add(dirLight)
-
-    scene.add(new THREE.CameraHelper(dirLight.shadow.camera))
-
-    // Geometry
-    let geometry = new THREE.TorusKnotGeometry(25, 8, 75, 20)
-    let material = new THREE.MeshPhongMaterial({
-        color: 0xff0000,
-        shininess: 150,
-        specular: 0x222222,
-    })
-
-    geometry = new THREE.BoxGeometry(3, 3, 3)
-    cube = new THREE.Mesh(geometry, material)
-    cube.position.set(8, 15, 8)
-    cube.castShadow = true
-    cube.receiveShadow = true
-    scene.add(cube)
-
-    // geometry = new THREE.BoxGeometry(10000, 10000, 10000)
-    // const cube2 = new THREE.Mesh(geometry, material)
-    // cube2.position.set(8, 15, 8)
-    // scene.add(cube2)
-
-    geometry = new THREE.BoxGeometry(30, 0.15, 30)
-
-    material = new THREE.MeshPhongMaterial({
-        color: 0xa0adaf,
-        shininess: 150,
-        specular: 0x111111,
-    })
-
-    // const ground = new THREE.Mesh(geometry, material)
-    // ground.scale.multiplyScalar(3)
-    // ground.castShadow = false
-    // ground.receiveShadow = true
-    // scene.add(ground)
-
-    renderTiff("elevation2.tiff", {
-        zScale: 1.5,
-        textureUrl: "texture3.jpg",
-        bumpmapUrl: "bump.jpg",
-        genSea: true,
-    }).then(({ terrain, sea }) => {
-        scene.add(sea)
-        scene.add(terrain)
-    })
-
-    renderTiff("elevationHighres2.tiff", { zScale: 1 }).then(({ terrain }) => {
-        scene.add(terrain)
-    })
-}
-
-function initMisc() {
-    renderer = new THREE.WebGLRenderer({ antialias: true })
-    renderer.setPixelRatio(window.devicePixelRatio)
-    renderer.setSize(window.innerWidth, window.innerHeight)
-    renderer.setAnimationLoop(animate)
-    renderer.physicallyCorrectLights = true // Use physically accurate lighting
-
-    renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap
-
-    // Mouse control
-    const controls = new OrbitControls(camera, renderer.domElement)
-    controls.target.set(0, 2, 0)
-    controls.update()
-
-    clock = new THREE.Clock()
-
-    stats = new Stats()
-    document.body.appendChild(stats.dom)
-}
-4
-
-function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight
-    camera.updateProjectionMatrix()
-
-    renderer.setSize(window.innerWidth, window.innerHeight)
-}
-
-function animate() {
-    render()
-    stats.update()
-}
-
-function renderScene() {
-    renderer.render(scene, camera)
-}
-
-const SUN_RADIUS = 15000 // Distance of the sun (light) from the scene
-let sunAngle = 0
-// Utility to interpolate between two colors
-function blendColors(color1, color2, factor) {
-    const c1 = new THREE.Color(color1)
-    const c2 = new THREE.Color(color2)
-    return c1.lerp(c2, factor)
-}
-
-function render() {
-    const delta = clock.getDelta()
-
-    renderScene()
-
-    // Animate cube rotations
-    cube.rotation.x += 0.25 * delta * 0.25
-    cube.rotation.y += 2 * delta * 0.25
-    cube.rotation.z += 1 * delta * 0.25
-
-    // // Simulate sun movement
-    // sunAngle += delta * 0.25 // Adjust speed of the sun's rotation
-
-    // // Skip the "night" portion
-    // if (sunAngle > Math.PI) {
-    //     sunAngle = 0 // Jump back to sunrise
-    // }
-
-    // // Update light position
-    // dirLight.position.set(
-    //     SUN_RADIUS * Math.cos(sunAngle), // X (orbit)
-    //     SUN_RADIUS * Math.sin(sunAngle), // Y (orbit)
-    //     1000, // Z (elevation)
-    // )
-
-    // // Adjust light color and intensity based on sun angle
-    // const t = sunAngle / Math.PI // Normalize the sunAngle to [0, 1]
-    // const r = 0xfe * (1 - t) + 0xfe * t // Red fades from 0xfe to 0xfe (unchanged)
-    // const g = 0xff * (1 - t) + 0xff * t // Green fades from 0xff to 0xff (unchanged)
-    // const b = 0xed // Blue stays constant
-
-    // dirLight.color.setRGB(r / 255, g / 255, b / 255) // Set smooth RGB transition
-    // dirLight.intensity = 0.5 + t * 2.5 // Smooth intensity increase
-}
+window.s = new SceneManager()

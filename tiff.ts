@@ -1,5 +1,85 @@
 import * as THREE from "npm:three"
-import { fromArrayBuffer, GeoTIFF, GeoTIFFImage } from "npm:geotiff"
+import {
+    fromArrayBuffer,
+    GeoTIFF,
+    GeoTIFFImage,
+    ReadRasterResult,
+} from "npm:geotiff"
+const textureLoader = new THREE.TextureLoader()
+
+async function createElevationGeometry(
+    image: GeoTIFFImage,
+    scale: number = 1,
+): THREE.BufferGeometry {
+    const width = image.getWidth()
+    const height = image.getHeight()
+    const data: ReadRasterResult = await image.readRasters({
+        interleave: true,
+    })
+    const resolution = image.getResolution()
+    if (resolution[2]) {
+        scale = resolution[2] * scale
+    }
+    const realWidth = Math.abs(resolution[0]) * (width - 1)
+    const realHeight = Math.abs(resolution[1]) * (height - 1)
+    const vertices: number[] = []
+    const indices: number[] = []
+    const validVertexIndices = new Map<number, number>()
+    const uvs: number[] = []
+
+    for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+            const i = row * width + col
+            const z = (data[i] as number) * scale
+            if (z >= -10000 && z <= 10000) {
+                const x = (col / (width - 1) - 0.5) * realWidth
+                const y = ((height - 1 - row) / (height - 1) - 0.5) * realHeight
+                validVertexIndices.set(i, vertices.length / 3)
+                vertices.push(x, y, z)
+                uvs.push(col / (width - 1), 1 - row / (height - 1))
+            }
+        }
+    }
+
+    // Second pass: create faces with flipped winding order
+    for (let row = 0; row < height - 1; row++) {
+        for (let col = 0; col < width - 1; col++) {
+            const i0 = row * width + col
+            const i1 = i0 + 1
+            const i2 = i0 + width
+            const i3 = i2 + 1
+            const v0 = validVertexIndices.get(i0)
+            const v1 = validVertexIndices.get(i1)
+            const v2 = validVertexIndices.get(i2)
+            const v3 = validVertexIndices.get(i3)
+            if (v0 !== undefined && v1 !== undefined && v2 !== undefined) {
+                // Flipped winding order for first triangle
+                indices.push(v0, v2, v1)
+            }
+            if (v1 !== undefined && v2 !== undefined && v3 !== undefined) {
+                // Flipped winding order for second triangle
+                indices.push(v1, v2, v3)
+            }
+        }
+    }
+
+    const geometry = new THREE.BufferGeometry()
+    const verticesFloat32 = new Float32Array(vertices)
+    geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(verticesFloat32, 3),
+    )
+    geometry.setAttribute(
+        "uv",
+        new THREE.BufferAttribute(new Float32Array(uvs), 2),
+    )
+    const indexArray = vertices.length / 3 > 65535
+        ? new Uint32Array(indices)
+        : new Uint16Array(indices)
+    geometry.setIndex(new THREE.BufferAttribute(indexArray, 1))
+    geometry.computeVertexNormals()
+    return geometry
+}
 
 async function loadGeoTiff(url: string): Promise<GeoTIFFImage> {
     console.log(`Fetching GeoTIFF from ${url}`)
@@ -8,74 +88,31 @@ async function loadGeoTiff(url: string): Promise<GeoTIFFImage> {
     console.log(`Converting ArrayBuffer to GeoTIFF`, arrayBuffer.byteLength)
     const tiff: GeoTIFF = await fromArrayBuffer(arrayBuffer)
     const image: GeoTIFFImage = await tiff.getImage()
-    window.image = image
     console.log(image)
     return image
-}
-
-// Create geometry using elevation data
-async function createElevationGeometry(
-    image: GeoTIFFImage,
-    scale: number = 1,
-): THREE.PlaneGeometry {
-    const width = image.getWidth()
-    const height = image.getHeight()
-    const data: Float32Array | Uint16Array | Uint8Array = await image
-        .readRasters({ interleave: true })
-
-    const resolution = image.getResolution()
-
-    if (resolution[2]) {
-        scale = resolution[2] * scale
-    }
-
-    const realWidth = Math.abs(resolution[0]) * (width - 1) // Real-world width
-    const realHeight = Math.abs(resolution[1]) * (height - 1) // Real-world height
-
-    const geometry = new THREE.PlaneGeometry(
-        realWidth,
-        realHeight,
-        width - 1,
-        height - 1,
-    )
-
-    const vertices = geometry.attributes.position.array as Float32Array
-
-    for (let i = 0, j = 0; i < vertices.length; i += 3, j++) {
-        let z = data[j] * scale
-        if (z < -10000 || z > 10000) {
-            z = -1
-        }
-        vertices[i + 2] = z
-    }
-
-    geometry.computeVertexNormals()
-    geometry.rotateX(-Math.PI / 2)
-
-    return geometry
 }
 
 type TextureBumpmap = {
     map?: THREE.Texture
     bumpMap?: THREE.Texture
+    bumpScale?: number
 }
 
 function getTextureBumpamp(opts: RenderTiffOpts): TextureBumpmap {
     const ret: TextureBumpmap = {}
-    const textureLoader = new THREE.TextureLoader()
 
     if (opts.textureUrl) {
         const texture = textureLoader.load(opts.textureUrl)
-        texture.wrapS = THREE.ClampToEdgeWrapping
-        texture.wrapT = THREE.ClampToEdgeWrapping
         ret.map = texture
     }
 
     if (opts.bumpmapUrl) {
         const bumpMap = textureLoader.load(opts.bumpmapUrl)
-        bumpMap.wrapS = THREE.ClampToEdgeWrapping
-        bumpMap.wrapT = THREE.ClampToEdgeWrapping
         ret.bumpMap = bumpMap
+    }
+
+    if (opts.bumpScale) {
+        ret.bumpScale = opts.bumpScale
     }
 
     return ret
@@ -86,6 +123,7 @@ export type RenderTiffOpts = {
     bumpmapUrl?: string
     zScale?: number
     genSea?: boolean
+    bumpScale?: number
 }
 
 export type RenderTiffOutput = {
@@ -108,10 +146,11 @@ export async function renderTiff(
         opts.zScale ? opts.zScale : 1,
     )
 
+    console.log("ELEVATION GEOM", elevationGeometry)
+
     // Create a material with the texture and bump map
-    let elevationMaterial = new THREE.MeshStandardMaterial({
+    const elevationMaterial = new THREE.MeshStandardMaterial({
         ...getTextureBumpamp(opts),
-        bumpScale: 1.5, // Control the intensity of the bump effect (adjust as needed)
     })
 
     // let elevationMaterial = new THREE.MeshPhongMaterial({
@@ -129,29 +168,37 @@ export async function renderTiff(
     if (opts.genSea) {
         // Create a flat geometry at sea level
         const seaLevelGeometry = new THREE.PlaneGeometry(
-            terrainMesh.geometry.parameters.width,
-            terrainMesh.geometry.parameters.height,
+            //terrainMesh.geometry.parameters.width,
+            //terrainMesh.geometry.parameters.height,
+            image.getWidth() * 25,
+            image.getHeight() * 25,
             image.getWidth(),
             image.getHeight(),
         )
 
+        const seaBumpTexture = textureLoader.load("seaBump.jpg")
+        seaBumpTexture.wrapS = THREE.RepeatWrapping
+        seaBumpTexture.wrapT = THREE.RepeatWrapping
+        seaBumpTexture.repeat.set(5, 5) // Adjust tiling frequency (4x4 as an example)
+
         const seaLevelMaterial = new THREE.MeshPhongMaterial({
-            color: 0x284356, // Blue for sea
+            //color: 0x5085aa, // Blue for sea
             bumpScale: 2,
             shininess: 150,
-            opacity: 0.75, // Slight transparency
+            opacity: 0.5, // Slight transparency
             transparent: true,
+
             ...getTextureBumpamp(opts),
+            //bumpMap: seaBumpTexture,
         })
 
         const seaLevelMesh = new THREE.Mesh(seaLevelGeometry, seaLevelMaterial)
 
         // Position the sea level mesh to align with the terrain
         seaLevelMesh.position.set(0, 0, 0) // Centered at (0, 0, 0)
-        seaLevelMesh.rotation.x = -Math.PI / 2
         // Align the plane to match Three.js's world
         ret.sea = seaLevelMesh
     }
 
-    return ret
+    return ret as RenderTiffOutput
 }
