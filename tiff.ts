@@ -1,4 +1,7 @@
 import * as THREE from "npm:three"
+import * as overlap from "./overlap.ts"
+import { ConvexGeometry } from "npm:three/addons/geometries/ConvexGeometry.js"
+
 import {
     fromArrayBuffer,
     GeoTIFF,
@@ -10,6 +13,7 @@ const textureLoader = new THREE.TextureLoader()
 async function createElevationGeometry(
     image: GeoTIFFImage,
     scale: number = 1,
+    //    overlapGeometry?: THREE.BufferGeometry,
 ): THREE.BufferGeometry {
     const width = image.getWidth()
     const height = image.getHeight()
@@ -20,6 +24,7 @@ async function createElevationGeometry(
     if (resolution[2]) {
         scale = resolution[2] * scale
     }
+
     const realWidth = Math.abs(resolution[0]) * (width - 1)
     const realHeight = Math.abs(resolution[1]) * (height - 1)
     const vertices: number[] = []
@@ -34,6 +39,7 @@ async function createElevationGeometry(
             if (z >= -10000 && z <= 10000) {
                 const x = (col / (width - 1) - 0.5) * realWidth
                 const y = ((height - 1 - row) / (height - 1) - 0.5) * realHeight
+
                 validVertexIndices.set(i, vertices.length / 3)
                 vertices.push(x, y, z)
                 uvs.push(col / (width - 1), 1 - row / (height - 1))
@@ -124,12 +130,16 @@ export type RenderTiffOpts = {
     zScale?: number
     genSea?: boolean
     bumpScale?: number
+    overlapGeometry?: THREE.BufferGeometry
+    wireframe?: boolean
 }
 
 export type RenderTiffOutput = {
     terrain: THREE.Mesh
     tiff: GeoTIFFImage
     sea?: THREE.Mesh
+    geometry: THREE.BufferGeometry
+    material: THREE.Material
 }
 
 // Main function to load and render
@@ -141,17 +151,29 @@ export async function renderTiff(
     const ret: Partial<RenderTiffOutput> = { tiff: image }
 
     // Create the elevation geometry
-    const elevationGeometry = await createElevationGeometry(
+    ret.geometry = await createElevationGeometry(
         image,
         opts.zScale ? opts.zScale : 1,
+        //        opts.overlapGeometry,
     )
 
-    console.log("ELEVATION GEOM", elevationGeometry)
-
-    // Create a material with the texture and bump map
-    const elevationMaterial = new THREE.MeshStandardMaterial({
-        ...getTextureBumpamp(opts),
-    })
+    if (opts.overlapGeometry) {
+        ret.geometry = overlap.removeOverlappingVertices(
+            ret.geometry,
+            opts.overlapGeometry,
+        )
+    }
+    if (opts.wireframe) {
+        ret.material = new THREE.MeshBasicMaterial({
+            color: 0x00ff00,
+            wireframe: true,
+        })
+    } else {
+        // Create a material with the texture and bump map
+        ret.material = new THREE.MeshStandardMaterial({
+            ...getTextureBumpamp(opts),
+        })
+    }
 
     // let elevationMaterial = new THREE.MeshPhongMaterial({
     //     color: 0x88cc88,
@@ -159,7 +181,7 @@ export async function renderTiff(
     //     specular: 0x111111,
     // })
 
-    const terrainMesh = new THREE.Mesh(elevationGeometry, elevationMaterial)
+    const terrainMesh = new THREE.Mesh(ret.geometry, ret.material)
     terrainMesh.receiveShadow = true
     terrainMesh.castShadow = true
 

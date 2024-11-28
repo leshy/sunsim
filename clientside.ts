@@ -135,18 +135,22 @@ class SceneManager {
 
     private async loadTerrains(): Promise<void> {
         try {
-            const terrain1Result = await renderTiff("elevation.tiff", {
-                zScale: 1,
-                textureUrl: "elevation.jpg",
-                bumpmapUrl: "elevationBump.jpg",
-                genSea: true,
-                bumpScale: 1.5,
-            })
-
             const terrain2Result = await renderTiff("elevationHighres.tiff", {
                 zScale: 1,
                 textureUrl: "elevationHighres4.jpg",
                 bumpmapUrl: "elevationHighresBump.jpg",
+            })
+
+            //            terrain2Result.terrain.position.set(-2220, 1370, -44)
+
+            const terrain1Result = await renderTiff("elevation.tiff", {
+                zScale: 1,
+                textureUrl: "elevation.jpg",
+                bumpmapUrl: "elevationBump.jpg",
+                genSea: false,
+                overlapGeometry: terrain2Result.geometry,
+                wireframe: true,
+                bumpScale: 1.5,
             })
 
             if (terrain1Result.sea) {
@@ -157,7 +161,6 @@ class SceneManager {
             this.scene.add(terrain2Result.terrain)
 
             window.terrain2 = terrain2Result.terrain
-            terrain2Result.terrain.position.set(-2220, 1370, -44)
         } catch (error) {
             console.error("Error loading terrains:", error)
         }
