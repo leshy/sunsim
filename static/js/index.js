@@ -41367,6 +41367,7 @@ var ConvexGeometry = class extends BufferGeometry {
 
 // overlap.ts
 function removeOverlappingVertices(lowResGeometry, highResGeometry, threshold = 0.1) {
+  const debugElements = [];
   const hull = new ConvexGeometry(
     Array.from(
       { length: highResGeometry.attributes.position.count },
@@ -41383,8 +41384,21 @@ function removeOverlappingVertices(lowResGeometry, highResGeometry, threshold = 
   const keptVertices = /* @__PURE__ */ new Set();
   for (let i = 0; i < oldPositions.count; i++) {
     const vertex2 = new Vector3().fromBufferAttribute(oldPositions, i);
-    if (!isPointInMesh(vertex2, hullMesh)) {
-      keptVertices.add(i);
+    if (Math.random() > 0.8) {
+      const { isInside, debugObjects } = isPointInMeshWithDebug(
+        vertex2,
+        hullMesh
+      );
+      if (!isInside) {
+        keptVertices.add(i);
+      }
+      for (const obj of debugObjects) {
+        debugElements.push(obj);
+      }
+    } else {
+      if (!isPointInMesh(vertex2, hullMesh)) {
+        keptVertices.add(i);
+      }
     }
   }
   const oldToNew = /* @__PURE__ */ new Map();
@@ -41422,27 +41436,51 @@ function removeOverlappingVertices(lowResGeometry, highResGeometry, threshold = 
     }
     newGeometry.setIndex(newIndices);
   }
-  return newGeometry;
+  return [newGeometry, debugElements];
 }
-function isPointInMesh(point, mesh, minDistance = 1e3) {
-  const directions = [
-    new Vector3(0, 0, 1),
-    new Vector3(0, 0, -1)
-  ];
+function isPointInMesh(point, mesh) {
   const raycaster = new Raycaster();
-  for (const direction of directions) {
-    raycaster.set(point, direction);
-    const intersects2 = raycaster.intersectObject(mesh);
-    if (intersects2.length % 2 === 1) {
-      return true;
-      const distance = intersects2.reduce(
-        (min, int) => Math.min(min, int.distance),
-        Infinity
-      );
-      return distance < minDistance;
-    }
+  const rayUp = new Vector3(0, 0, 1);
+  raycaster.set(point, rayUp);
+  const intersectionsUp = raycaster.intersectObject(mesh);
+  const rayDown = new Vector3(0, 0, -1);
+  raycaster.set(point, rayDown);
+  const intersectionsDown = raycaster.intersectObject(mesh);
+  const totalIntersections = intersectionsUp.length + intersectionsDown.length;
+  return totalIntersections % 2 === 1;
+}
+function isPointInMeshWithDebug(point, mesh) {
+  const debugObjects = [];
+  const raycaster = new Raycaster();
+  const rayDown = new Vector3(0, 0, 1);
+  raycaster.set(point, rayDown);
+  const intersections = raycaster.intersectObject(mesh);
+  if (intersections.length === 0) {
+    return { isInside: false, debugObjects };
   }
-  return false;
+  const intersection = intersections[0];
+  const hitGeometry = new SphereGeometry(10);
+  const hitMaterial = new MeshBasicMaterial({ color: 65280 });
+  const hitMarker = new Mesh(hitGeometry, hitMaterial);
+  hitMarker.position.copy(intersection.point);
+  debugObjects.push(hitMarker);
+  const rayGeometry = new BufferGeometry().setFromPoints([
+    point,
+    intersection.point
+  ]);
+  if (point.z > intersection.point.z) {
+    const rayLine = new Line(
+      rayGeometry,
+      new LineBasicMaterial({
+        color: 65280
+      })
+    );
+    debugObjects.push(rayLine);
+  }
+  return {
+    isInside: point.z > intersection.point.z,
+    debugObjects
+  };
 }
 
 // ../../.cache/deno/deno_esbuild/registry.npmjs.org/@petamoriken/float16@3.9.0/node_modules/@petamoriken/float16/src/_util/messages.mjs
@@ -43561,9 +43599,21 @@ async function fromArrayBuffer(arrayBuffer, signal) {
   return GeoTIFF.fromSource(makeBufferSource(arrayBuffer), signal);
 }
 
-// tiff.ts
-var textureLoader = new TextureLoader();
-async function createElevationGeometry(image, scale = 1) {
+// tiffgeom.ts
+function alignMeshes(sourceTiff, targetTiff, meshToTransform) {
+  const [srcMinX, srcMinY, srcMaxX, srcMaxY] = sourceTiff.getBoundingBox();
+  const [tgtMinX, tgtMinY, tgtMaxX, tgtMaxY] = targetTiff.getBoundingBox();
+  const srcCenterX = (srcMaxX + srcMinX) / 2;
+  const srcCenterY = (srcMaxY + srcMinY) / 2;
+  const tgtCenterX = (tgtMaxX + tgtMinX) / 2;
+  const tgtCenterY = (tgtMaxY + tgtMinY) / 2;
+  const offsetX = tgtCenterX - srcCenterX;
+  const offsetY = tgtCenterY - srcCenterY;
+  const matrix = new Matrix4().makeTranslation(offsetX, offsetY, 0);
+  meshToTransform.matrix.copy(matrix);
+  meshToTransform.matrixAutoUpdate = false;
+}
+async function createElevationGeometry(image, scale = 1, referenceImage) {
   const width = image.getWidth();
   const height = image.getHeight();
   const data = await image.readRasters({
@@ -43575,56 +43625,70 @@ async function createElevationGeometry(image, scale = 1) {
   }
   const realWidth = Math.abs(resolution[0]) * (width - 1);
   const realHeight = Math.abs(resolution[1]) * (height - 1);
-  const vertices = [];
+  const estimatedVertexCount = width * height;
+  const vertices = new Float32Array(estimatedVertexCount * 3);
+  const uvs = new Float32Array(estimatedVertexCount * 2);
   const indices = [];
-  const validVertexIndices = /* @__PURE__ */ new Map();
-  const uvs = [];
-  for (let row = 0; row < height; row++) {
-    for (let col = 0; col < width; col++) {
-      const i = row * width + col;
-      const z = data[i] * scale;
-      if (z >= -1e4 && z <= 1e4) {
-        const x = (col / (width - 1) - 0.5) * realWidth;
-        const y = ((height - 1 - row) / (height - 1) - 0.5) * realHeight;
-        validVertexIndices.set(i, vertices.length / 3);
-        vertices.push(x, y, z);
-        uvs.push(col / (width - 1), 1 - row / (height - 1));
-      }
-    }
-  }
+  let vertexCount = 0;
+  const validVertexIndices = new Int32Array(width * height).fill(-1);
   for (let row = 0; row < height - 1; row++) {
     for (let col = 0; col < width - 1; col++) {
       const i0 = row * width + col;
       const i1 = i0 + 1;
       const i2 = i0 + width;
       const i3 = i2 + 1;
-      const v0 = validVertexIndices.get(i0);
-      const v1 = validVertexIndices.get(i1);
-      const v2 = validVertexIndices.get(i2);
-      const v3 = validVertexIndices.get(i3);
-      if (v0 !== void 0 && v1 !== void 0 && v2 !== void 0) {
+      const vertices_to_check = [
+        { index: i0, col, row },
+        { index: i1, col: col + 1, row },
+        { index: i2, col, row: row + 1 },
+        { index: i3, col: col + 1, row: row + 1 }
+      ];
+      for (const { index, col: vcol, row: vrow } of vertices_to_check) {
+        if (validVertexIndices[index] === -1) {
+          const z = data[index] * scale;
+          if (z >= -1e4 && z <= 1e4) {
+            const x = (vcol / (width - 1) - 0.5) * realWidth;
+            const y = ((height - 1 - vrow) / (height - 1) - 0.5) * realHeight;
+            const vIndex = vertexCount * 3;
+            vertices[vIndex] = x;
+            vertices[vIndex + 1] = y;
+            vertices[vIndex + 2] = z;
+            const uvIndex = vertexCount * 2;
+            uvs[uvIndex] = vcol / (width - 1);
+            uvs[uvIndex + 1] = 1 - vrow / (height - 1);
+            validVertexIndices[index] = vertexCount;
+            vertexCount++;
+          }
+        }
+      }
+      const v0 = validVertexIndices[i0];
+      const v1 = validVertexIndices[i1];
+      const v2 = validVertexIndices[i2];
+      const v3 = validVertexIndices[i3];
+      if (v0 !== -1 && v1 !== -1 && v2 !== -1) {
         indices.push(v0, v2, v1);
       }
-      if (v1 !== void 0 && v2 !== void 0 && v3 !== void 0) {
+      if (v1 !== -1 && v2 !== -1 && v3 !== -1) {
         indices.push(v1, v2, v3);
       }
     }
   }
   const geometry = new BufferGeometry();
-  const verticesFloat32 = new Float32Array(vertices);
+  const finalVertices = new Float32Array(vertices.buffer, 0, vertexCount * 3);
+  const finalUvs = new Float32Array(uvs.buffer, 0, vertexCount * 2);
   geometry.setAttribute(
     "position",
-    new BufferAttribute(verticesFloat32, 3)
+    new BufferAttribute(finalVertices, 3)
   );
-  geometry.setAttribute(
-    "uv",
-    new BufferAttribute(new Float32Array(uvs), 2)
-  );
-  const indexArray = vertices.length / 3 > 65535 ? new Uint32Array(indices) : new Uint16Array(indices);
+  geometry.setAttribute("uv", new BufferAttribute(finalUvs, 2));
+  const indexArray = vertexCount > 65535 ? new Uint32Array(indices) : new Uint16Array(indices);
   geometry.setIndex(new BufferAttribute(indexArray, 1));
   geometry.computeVertexNormals();
   return geometry;
 }
+
+// tiff.ts
+var textureLoader = new TextureLoader();
 async function loadGeoTiff(url) {
   console.log(`Fetching GeoTIFF from ${url}`);
   const response = await fetch(url);
@@ -43656,13 +43720,19 @@ async function renderTiff(url, opts = {}) {
   ret.geometry = await createElevationGeometry(
     image,
     opts.zScale ? opts.zScale : 1
-    //        opts.overlapGeometry,
   );
   if (opts.overlapGeometry) {
-    ret.geometry = removeOverlappingVertices(
-      ret.geometry,
-      opts.overlapGeometry
+    alignMeshes(
+      image,
+      opts.overlapGeometry.tiff,
+      opts.overlapGeometry.terrain
     );
+    const [geometry, debugElements] = removeOverlappingVertices(
+      ret.geometry,
+      opts.overlapGeometry.geometry
+    );
+    ret.geometry = geometry;
+    ret.debugElements = debugElements;
   }
   if (opts.wireframe) {
     ret.material = new MeshBasicMaterial({
@@ -43709,7 +43779,7 @@ async function renderTiff(url, opts = {}) {
 }
 
 // clientside.ts
-window.THREE = three_module_exports;
+globalThis.THREE = three_module_exports;
 var SceneManager = class {
   camera;
   scene;
@@ -43794,23 +43864,30 @@ var SceneManager = class {
       const terrain2Result = await renderTiff("elevationHighres.tiff", {
         zScale: 1,
         textureUrl: "elevationHighres4.jpg",
-        bumpmapUrl: "elevationHighresBump.jpg"
+        bumpmapUrl: "elevationHighresBump.jpg",
+        wireframe: false
       });
       const terrain1Result = await renderTiff("elevation.tiff", {
         zScale: 1,
         textureUrl: "elevation.jpg",
         bumpmapUrl: "elevationBump.jpg",
         genSea: false,
-        overlapGeometry: terrain2Result.geometry,
-        wireframe: true,
+        overlapGeometry: terrain2Result,
+        wireframe: false,
         bumpScale: 1.5
       });
       if (terrain1Result.sea) {
         this.scene.add(terrain1Result.sea);
       }
+      if (terrain1Result.debugElements) {
+        for (const element of terrain1Result.debugElements) {
+          this.scene.add(element);
+        }
+      }
       this.scene.add(terrain1Result.terrain);
       this.scene.add(terrain2Result.terrain);
-      window.terrain2 = terrain2Result.terrain;
+      window.terrain1 = terrain1Result;
+      window.terrain2 = terrain2Result;
     } catch (error) {
       console.error("Error loading terrains:", error);
     }
@@ -43871,7 +43948,7 @@ var SceneManager = class {
     this.stats.dom.remove();
   }
 };
-window.s = new SceneManager();
+globalThis.s = new SceneManager();
 /*! Bundled license information:
 
 pako/dist/pako.esm.mjs:

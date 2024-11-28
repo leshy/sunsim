@@ -10,7 +10,8 @@ import { FXAAShader } from "npm:three/addons/shaders/FXAAShader.js"
 import { GammaCorrectionShader } from "npm:three/addons/shaders/GammaCorrectionShader.js"
 
 import { renderTiff } from "./tiff.ts"
-window.THREE = THREE
+
+globalThis.THREE = THREE
 
 class SceneManager {
     private camera: THREE.PerspectiveCamera
@@ -139,17 +140,16 @@ class SceneManager {
                 zScale: 1,
                 textureUrl: "elevationHighres4.jpg",
                 bumpmapUrl: "elevationHighresBump.jpg",
+                wireframe: false,
             })
-
-            //            terrain2Result.terrain.position.set(-2220, 1370, -44)
 
             const terrain1Result = await renderTiff("elevation.tiff", {
                 zScale: 1,
                 textureUrl: "elevation.jpg",
                 bumpmapUrl: "elevationBump.jpg",
                 genSea: false,
-                overlapGeometry: terrain2Result.geometry,
-                wireframe: true,
+                overlapGeometry: terrain2Result,
+                wireframe: false,
                 bumpScale: 1.5,
             })
 
@@ -157,10 +157,17 @@ class SceneManager {
                 this.scene.add(terrain1Result.sea)
             }
 
+            if (terrain1Result.debugElements) {
+                for (const element of terrain1Result.debugElements) {
+                    this.scene.add(element)
+                }
+            }
+
             this.scene.add(terrain1Result.terrain)
             this.scene.add(terrain2Result.terrain)
 
-            window.terrain2 = terrain2Result.terrain
+            window.terrain1 = terrain1Result
+            window.terrain2 = terrain2Result
         } catch (error) {
             console.error("Error loading terrains:", error)
         }
@@ -239,4 +246,4 @@ class SceneManager {
     }
 }
 
-window.s = new SceneManager()
+globalThis.s = new SceneManager()

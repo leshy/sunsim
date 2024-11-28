@@ -1,91 +1,15 @@
 import * as THREE from "npm:three"
 import * as overlap from "./overlap.ts"
-import { ConvexGeometry } from "npm:three/addons/geometries/ConvexGeometry.js"
+
+import { fromArrayBuffer, GeoTIFF, GeoTIFFImage } from "npm:geotiff"
 
 import {
-    fromArrayBuffer,
-    GeoTIFF,
-    GeoTIFFImage,
-    ReadRasterResult,
-} from "npm:geotiff"
+    alignGeometries,
+    alignMeshes,
+    createElevationGeometry,
+} from "./tiffgeom.ts"
+
 const textureLoader = new THREE.TextureLoader()
-
-async function createElevationGeometry(
-    image: GeoTIFFImage,
-    scale: number = 1,
-    //    overlapGeometry?: THREE.BufferGeometry,
-): THREE.BufferGeometry {
-    const width = image.getWidth()
-    const height = image.getHeight()
-    const data: ReadRasterResult = await image.readRasters({
-        interleave: true,
-    })
-    const resolution = image.getResolution()
-    if (resolution[2]) {
-        scale = resolution[2] * scale
-    }
-
-    const realWidth = Math.abs(resolution[0]) * (width - 1)
-    const realHeight = Math.abs(resolution[1]) * (height - 1)
-    const vertices: number[] = []
-    const indices: number[] = []
-    const validVertexIndices = new Map<number, number>()
-    const uvs: number[] = []
-
-    for (let row = 0; row < height; row++) {
-        for (let col = 0; col < width; col++) {
-            const i = row * width + col
-            const z = (data[i] as number) * scale
-            if (z >= -10000 && z <= 10000) {
-                const x = (col / (width - 1) - 0.5) * realWidth
-                const y = ((height - 1 - row) / (height - 1) - 0.5) * realHeight
-
-                validVertexIndices.set(i, vertices.length / 3)
-                vertices.push(x, y, z)
-                uvs.push(col / (width - 1), 1 - row / (height - 1))
-            }
-        }
-    }
-
-    // Second pass: create faces with flipped winding order
-    for (let row = 0; row < height - 1; row++) {
-        for (let col = 0; col < width - 1; col++) {
-            const i0 = row * width + col
-            const i1 = i0 + 1
-            const i2 = i0 + width
-            const i3 = i2 + 1
-            const v0 = validVertexIndices.get(i0)
-            const v1 = validVertexIndices.get(i1)
-            const v2 = validVertexIndices.get(i2)
-            const v3 = validVertexIndices.get(i3)
-            if (v0 !== undefined && v1 !== undefined && v2 !== undefined) {
-                // Flipped winding order for first triangle
-                indices.push(v0, v2, v1)
-            }
-            if (v1 !== undefined && v2 !== undefined && v3 !== undefined) {
-                // Flipped winding order for second triangle
-                indices.push(v1, v2, v3)
-            }
-        }
-    }
-
-    const geometry = new THREE.BufferGeometry()
-    const verticesFloat32 = new Float32Array(vertices)
-    geometry.setAttribute(
-        "position",
-        new THREE.BufferAttribute(verticesFloat32, 3),
-    )
-    geometry.setAttribute(
-        "uv",
-        new THREE.BufferAttribute(new Float32Array(uvs), 2),
-    )
-    const indexArray = vertices.length / 3 > 65535
-        ? new Uint32Array(indices)
-        : new Uint16Array(indices)
-    geometry.setIndex(new THREE.BufferAttribute(indexArray, 1))
-    geometry.computeVertexNormals()
-    return geometry
-}
 
 async function loadGeoTiff(url: string): Promise<GeoTIFFImage> {
     console.log(`Fetching GeoTIFF from ${url}`)
@@ -130,7 +54,7 @@ export type RenderTiffOpts = {
     zScale?: number
     genSea?: boolean
     bumpScale?: number
-    overlapGeometry?: THREE.BufferGeometry
+    overlapGeometry?: RenderTiffOutput
     wireframe?: boolean
 }
 
@@ -140,6 +64,7 @@ export type RenderTiffOutput = {
     sea?: THREE.Mesh
     geometry: THREE.BufferGeometry
     material: THREE.Material
+    debugElements?: Array<any>
 }
 
 // Main function to load and render
@@ -154,15 +79,24 @@ export async function renderTiff(
     ret.geometry = await createElevationGeometry(
         image,
         opts.zScale ? opts.zScale : 1,
-        //        opts.overlapGeometry,
     )
 
     if (opts.overlapGeometry) {
-        ret.geometry = overlap.removeOverlappingVertices(
-            ret.geometry,
-            opts.overlapGeometry,
+        alignMeshes(
+            image,
+            opts.overlapGeometry.tiff,
+            opts.overlapGeometry.terrain,
         )
+
+        const [geometry, debugElements] = overlap.removeOverlappingVertices(
+            ret.geometry,
+            opts.overlapGeometry.geometry,
+        )
+
+        ret.geometry = geometry
+        ret.debugElements = debugElements
     }
+
     if (opts.wireframe) {
         ret.material = new THREE.MeshBasicMaterial({
             color: 0x00ff00,
