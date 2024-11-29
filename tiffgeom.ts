@@ -1,6 +1,27 @@
 import * as THREE from "npm:three"
 import { GeoTIFFImage, ReadRasterResult } from "npm:geotiff"
 
+export function analyzeGeometryCenter(
+    geometry: THREE.BufferGeometry,
+): THREE.Vector3 {
+    const positions = geometry.getAttribute("position")
+    const center = new THREE.Vector3()
+
+    // Calculate center
+    for (let i = 0; i < positions.count; i++) {
+        center.add(
+            new THREE.Vector3(
+                positions.getX(i),
+                positions.getY(i),
+                positions.getZ(i),
+            ),
+        )
+    }
+
+    center.divideScalar(positions.count)
+    return center
+}
+
 export function alignMeshes(
     sourceTiff: GeoTIFFImage,
     targetTiff: GeoTIFFImage,
@@ -34,6 +55,7 @@ export function alignGeometries(
     geometryToTransform: THREE.BufferGeometry,
     offsetZ: number = 0,
 ): void {
+    console.log("Aligning geometries", offsetZ)
     // Get bounding boxes
     const [srcMinX, srcMinY, srcMaxX, srcMaxY] = sourceTiff.getBoundingBox()
     const [tgtMinX, tgtMinY, tgtMaxX, tgtMaxY] = targetTiff.getBoundingBox()

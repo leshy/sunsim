@@ -1,174 +1,114 @@
-import * as THREE from "npm:three";
-import { ConvexGeometry } from "npm:three/addons/geometries/ConvexGeometry.js";
+import * as THREE from "npm:three"
+import { ConvexGeometry } from "npm:three/addons/geometries/ConvexGeometry.js"
 
-export function removeOverlappingVertices(
+export function cutHole(
     lowResGeometry: THREE.BufferGeometry,
-    highResGeometry: THREE.BufferGeometry,
-    threshold = 0.1,
+    highResMesh: THREE.Mesh,
 ): THREE.BufferGeometry {
-    const debugElements = [];
+    // Get the original arrays
+    const positions = Array.from(lowResGeometry.attributes.position.array)
+    const indices = Array.from(lowResGeometry.index?.array || [])
 
-    const hull = new ConvexGeometry(
-        Array.from(
-            { length: highResGeometry.attributes.position.count },
-            (_, i) =>
-                new THREE.Vector3().fromBufferAttribute(
-                    highResGeometry.attributes.position,
-                    i,
-                ),
-        ),
-    );
-    hull.scale(1 + threshold, 1 + threshold, 1 + threshold);
-    const hullMesh = new THREE.Mesh(hull);
+    // Track which vertices should be removed
+    const verticesToRemove = new Set<number>()
 
-    const oldPositions = lowResGeometry.attributes.position;
-    const indices = lowResGeometry.index
-        ? Array.from(lowResGeometry.index.array)
-        : null;
-    const keptVertices = new Set<number>();
+    // Create raycaster
+    const raycaster = new THREE.Raycaster()
+    const upVector = new THREE.Vector3(0, 1, 0)
 
-    // Find vertices to keep
-    for (let i = 0; i < oldPositions.count; i++) {
-        const vertex = new THREE.Vector3().fromBufferAttribute(oldPositions, i);
+    // Check each vertex
+    for (let i = 0; i < positions.length; i += 3) {
+        const vertexPosition = new THREE.Vector3(
+            positions[i],
+            positions[i + 1],
+            positions[i + 2],
+        )
 
-        if (Math.random() > 0.8) {
-            const { isInside, debugObjects } = isPointInMeshWithDebug(
-                vertex,
-                hullMesh,
-            );
-            if (!isInside) {
-                keptVertices.add(i);
-            }
-            for (const obj of debugObjects) {
-                debugElements.push(obj);
-            }
-        } else {
-            if (!isPointInMesh(vertex, hullMesh)) {
-                keptVertices.add(i);
-            }
+        // Offset slightly below to ensure we catch intersections
+        vertexPosition.y -= 0.1 // Adjust this offset based on your scale
+
+        raycaster.set(vertexPosition, upVector)
+        const intersects = raycaster.intersectObject(highResMesh)
+
+        if (intersects.length > 0) {
+            verticesToRemove.add(i / 3) // Store vertex index
         }
     }
 
-    // Create vertex mapping
-    const oldToNew = new Map<number, number>();
-    let newIndex = 0;
-    Array.from(keptVertices).forEach((i) => {
-        oldToNew.set(i, newIndex++);
-    });
+    // Create mapping for new vertex indices
+    const indexMap = new Map<number, number>()
+    let newIndex = 0
 
-    // Create new geometry with preserved attributes
-    const newGeometry = new THREE.BufferGeometry();
-
-    // Copy all attributes
-    Object.entries(lowResGeometry.attributes).forEach(([name, attribute]) => {
-        const itemSize = attribute.itemSize;
-        const newArray = new Float32Array(keptVertices.size * itemSize);
-
-        Array.from(keptVertices).forEach((oldIdx, newIdx) => {
-            for (let i = 0; i < itemSize; i++) {
-                newArray[newIdx * itemSize + i] =
-                    attribute.array[oldIdx * itemSize + i];
-            }
-        });
-
-        newGeometry.setAttribute(
-            name,
-            new THREE.BufferAttribute(newArray, itemSize),
-        );
-    });
-
-    // Update indices if they exist
-    if (indices) {
-        const newIndices: number[] = [];
-        for (let i = 0; i < indices.length; i += 3) {
-            const a = indices[i];
-            const b = indices[i + 1];
-            const c = indices[i + 2];
-
-            if (
-                keptVertices.has(a) &&
-                keptVertices.has(b) &&
-                keptVertices.has(c)
-            ) {
-                newIndices.push(
-                    oldToNew.get(a)!,
-                    oldToNew.get(b)!,
-                    oldToNew.get(c)!,
-                );
-            }
+    for (let i = 0; i < positions.length / 3; i++) {
+        if (!verticesToRemove.has(i)) {
+            indexMap.set(i, newIndex++)
         }
-        newGeometry.setIndex(newIndices);
     }
 
-    return [newGeometry, debugElements];
-}
-
-function isPointInMesh(point: THREE.Vector3, mesh: THREE.Mesh): boolean {
-    // Create a raycaster
-    const raycaster = new THREE.Raycaster();
-
-    // Cast ray up (positive Z)
-    const rayUp = new THREE.Vector3(0, 0, 1);
-    raycaster.set(point, rayUp);
-    const intersectionsUp = raycaster.intersectObject(mesh);
-
-    // Cast ray down (negative Z)
-    const rayDown = new THREE.Vector3(0, 0, -1);
-    raycaster.set(point, rayDown);
-    const intersectionsDown = raycaster.intersectObject(mesh);
-
-    // If point is inside mesh, we should have odd number of intersections in either direction
-    const totalIntersections =
-        intersectionsUp.length + intersectionsDown.length;
-    return totalIntersections % 2 === 1;
-}
-
-function isPointInMeshWithDebug(
-    point: THREE.Vector3,
-    mesh: THREE.Mesh,
-): {
-    isInside: boolean;
-    debugObjects: THREE.Object3D[];
-} {
-    const debugObjects: THREE.Object3D[] = [];
-
-    // Setup raycasting
-    const raycaster = new THREE.Raycaster();
-    const rayDown = new THREE.Vector3(0, 0, 1);
-    raycaster.set(point, rayDown);
-
-    const intersections = raycaster.intersectObject(mesh);
-
-    if (intersections.length === 0) {
-        return { isInside: false, debugObjects };
+    // Create new position array without removed vertices
+    const newPositions: number[] = []
+    for (let i = 0; i < positions.length; i += 3) {
+        if (!verticesToRemove.has(i / 3)) {
+            newPositions.push(positions[i], positions[i + 1], positions[i + 2])
+        }
     }
 
-    const intersection = intersections[0];
+    // Create new index array, skipping faces that use removed vertices
+    const newIndices: number[] = []
+    for (let i = 0; i < indices.length; i += 3) {
+        const a = indices[i]
+        const b = indices[i + 1]
+        const c = indices[i + 2]
 
-    // Add intersection point marker
-    const hitGeometry = new THREE.SphereGeometry(10);
-    const hitMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-    const hitMarker = new THREE.Mesh(hitGeometry, hitMaterial);
-    hitMarker.position.copy(intersection.point);
-    debugObjects.push(hitMarker);
-
-    // Add ray line
-    const rayGeometry = new THREE.BufferGeometry().setFromPoints([
-        point,
-        intersection.point,
-    ]);
-    if (point.z > intersection.point.z) {
-        const rayLine = new THREE.Line(
-            rayGeometry,
-            new THREE.LineBasicMaterial({
-                color: 0x00ff00,
-            }),
-        );
-        debugObjects.push(rayLine);
+        // Only keep faces where none of the vertices were removed
+        if (
+            !verticesToRemove.has(a) &&
+            !verticesToRemove.has(b) &&
+            !verticesToRemove.has(c)
+        ) {
+            // Map to new indices
+            newIndices.push(
+                indexMap.get(a)!,
+                indexMap.get(b)!,
+                indexMap.get(c)!,
+            )
+        }
     }
 
-    return {
-        isInside: point.z > intersection.point.z,
-        debugObjects,
-    };
+    // Create new geometry
+    const newGeometry = new THREE.BufferGeometry()
+    newGeometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(newPositions, 3),
+    )
+    newGeometry.setIndex(newIndices)
+
+    // Copy other attributes if they exist
+    for (const key in lowResGeometry.attributes) {
+        if (key !== "position") {
+            const attribute = lowResGeometry.attributes[key]
+            const itemSize = attribute.itemSize
+            const newArray: number[] = []
+
+            for (let i = 0; i < positions.length / 3; i++) {
+                if (!verticesToRemove.has(i)) {
+                    for (let j = 0; j < itemSize; j++) {
+                        newArray.push(attribute.array[i * itemSize + j])
+                    }
+                }
+            }
+
+            newGeometry.setAttribute(
+                key,
+                new THREE.Float32BufferAttribute(newArray, itemSize),
+            )
+        }
+    }
+
+    // Recompute normals if they exist
+    if (newGeometry.attributes.normal) {
+        newGeometry.computeVertexNormals()
+    }
+
+    return newGeometry
 }

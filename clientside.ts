@@ -143,12 +143,13 @@ class SceneManager {
                 wireframe: false,
             })
 
-            const terrain1Result = await renderTiff("elevation.tiff", {
+            const terrain1Result = await renderTiff("elevationHole.tiff", {
                 zScale: 1,
                 textureUrl: "elevation.jpg",
                 bumpmapUrl: "elevationBump.jpg",
-                genSea: false,
+                genSea: true,
                 overlapGeometry: terrain2Result,
+                overlapZoffset: -45,
                 wireframe: false,
                 bumpScale: 1.5,
             })

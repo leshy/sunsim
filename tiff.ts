@@ -6,6 +6,7 @@ import { fromArrayBuffer, GeoTIFF, GeoTIFFImage } from "npm:geotiff"
 import {
     alignGeometries,
     alignMeshes,
+    analyzeGeometryCenter,
     createElevationGeometry,
 } from "./tiffgeom.ts"
 
@@ -56,6 +57,7 @@ export type RenderTiffOpts = {
     bumpScale?: number
     overlapGeometry?: RenderTiffOutput
     wireframe?: boolean
+    overlapZoffset?: number
 }
 
 export type RenderTiffOutput = {
@@ -82,19 +84,25 @@ export async function renderTiff(
     )
 
     if (opts.overlapGeometry) {
-        alignMeshes(
+        alignGeometries(
             image,
             opts.overlapGeometry.tiff,
-            opts.overlapGeometry.terrain,
-        )
-
-        const [geometry, debugElements] = overlap.removeOverlappingVertices(
-            ret.geometry,
             opts.overlapGeometry.geometry,
+            opts.overlapZoffset,
         )
 
-        ret.geometry = geometry
-        ret.debugElements = debugElements
+        // console.log("CALLING REMOVEL OF VERTICES")
+
+        // ret.geometry = overlap.cutHole(
+        //     ret.geometry,
+        //     opts.overlapGeometry.terrain,
+        // )
+
+        // //ret.debugElements = overlap.removeOverlappingVertices(
+        // //    ret.geometry,
+        // //    opts.overlapGeometry.terrain,
+        // //)
+        // console.log("OK YO")
     }
 
     if (opts.wireframe) {
@@ -116,6 +124,7 @@ export async function renderTiff(
     // })
 
     const terrainMesh = new THREE.Mesh(ret.geometry, ret.material)
+
     terrainMesh.receiveShadow = true
     terrainMesh.castShadow = true
 
@@ -143,7 +152,6 @@ export async function renderTiff(
             shininess: 150,
             opacity: 0.5, // Slight transparency
             transparent: true,
-
             ...getTextureBumpamp(opts),
             //bumpMap: seaBumpTexture,
         })
