@@ -1,5 +1,6 @@
 import * as THREE from "npm:three"
 import * as overlap from "./overlap.ts"
+import * as stitch from "./tiffstitch.ts"
 
 import { fromArrayBuffer, GeoTIFF, GeoTIFFImage } from "npm:geotiff"
 
@@ -91,7 +92,12 @@ export async function renderTiff(
             opts.overlapZoffset,
         )
 
-        // console.log("CALLING REMOVEL OF VERTICES")
+        // console.log("stitching")
+        // ret.geometry = stitch.mergeTerrainGeometries(
+        //     ret.geometry,
+        //     opts.overlapGeometry.geometry,
+        // )
+        // console.log("done")
 
         // ret.geometry = overlap.cutHole(
         //     ret.geometry,
@@ -124,9 +130,6 @@ export async function renderTiff(
     // })
 
     const terrainMesh = new THREE.Mesh(ret.geometry, ret.material)
-
-    terrainMesh.receiveShadow = true
-    terrainMesh.castShadow = true
 
     ret.terrain = terrainMesh
 
@@ -163,6 +166,9 @@ export async function renderTiff(
         // Align the plane to match Three.js's world
         ret.sea = seaLevelMesh
     }
+
+    ret.terrain.receiveShadow = true
+    ret.terrain.castShadow = true
 
     return ret as RenderTiffOutput
 }

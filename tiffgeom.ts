@@ -81,8 +81,6 @@ export function alignGeometries(
     // Recompute normals since we've transformed the geometry
     geometryToTransform.computeVertexNormals()
 
-    geometryToTransform.attributes.position.needsUpdate = true
-
     return geometryToTransform
 }
 

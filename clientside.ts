@@ -10,6 +10,15 @@ import { FXAAShader } from "npm:three/addons/shaders/FXAAShader.js"
 import { GammaCorrectionShader } from "npm:three/addons/shaders/GammaCorrectionShader.js"
 
 import { renderTiff } from "./tiff.ts"
+import * as stitch from "./tiffstitch.ts"
+import * as geom from "./tiffgeom.ts"
+import * as SunCalc from "npm:suncalc"
+import * as df from "npm:date-fns"
+
+window.df = df
+
+window.stitch = stitch
+window.geom = geom
 
 globalThis.THREE = THREE
 
@@ -98,9 +107,10 @@ class SceneManager {
         this.ambientLight = new THREE.AmbientLight(0x404040, 2)
         this.scene.add(this.ambientLight)
 
-        this.dirLight = new THREE.DirectionalLight(0xfeffed, 4)
+        this.dirLight = new THREE.DirectionalLight(0xffeecc, 4)
         this.dirLight.name = "Dir. Light"
-        this.dirLight.position.set(15000, -15000, 7500)
+        //        this.dirLight.position.set(15000, -15000, 5000)
+        this.dirLight.position.set(12000, 8000, 6000)
         this.configureDirectionalLight()
 
         this.scene.add(this.dirLight)
@@ -108,15 +118,16 @@ class SceneManager {
     }
 
     private configureDirectionalLight(): void {
+        const thicc = 2000
         this.dirLight.castShadow = true
         this.dirLight.shadow.camera.near = 1
-        this.dirLight.shadow.camera.far = 300
-        this.dirLight.shadow.camera.right = 150
-        this.dirLight.shadow.camera.left = -150
-        this.dirLight.shadow.camera.top = 150
-        this.dirLight.shadow.camera.bottom = -150
-        this.dirLight.shadow.mapSize.width = 1024 * 10
-        this.dirLight.shadow.mapSize.height = 1024 * 10
+        this.dirLight.shadow.camera.far = 25000
+        this.dirLight.shadow.camera.right = thicc
+        this.dirLight.shadow.camera.left = -thicc
+        this.dirLight.shadow.camera.top = thicc
+        this.dirLight.shadow.camera.bottom = -thicc
+        this.dirLight.shadow.mapSize.width = 1024 * 4
+        this.dirLight.shadow.mapSize.height = 1024 * 4
     }
 
     private setupGeometry(): void {
@@ -126,12 +137,12 @@ class SceneManager {
             specular: 0x222222,
         })
 
-        const geometry = new THREE.BoxGeometry(30, 30, 30)
-        this.cube = new THREE.Mesh(geometry, material)
-        this.cube.position.set(8, 150, 8)
-        this.cube.castShadow = true
-        this.cube.receiveShadow = true
-        this.scene.add(this.cube)
+        const geometry = new THREE.BoxGeometry(100, 100, 100)
+        // this.cube = new THREE.Mesh(geometry, material)
+        // this.cube.position.set(-2000, 1200, 200)
+        // this.cube.castShadow = true
+        // this.cube.receiveShadow = true
+        //this.scene.add(this.cube)
     }
 
     private async loadTerrains(): Promise<void> {
@@ -169,6 +180,13 @@ class SceneManager {
 
             window.terrain1 = terrain1Result
             window.terrain2 = terrain2Result
+
+            this.dirLight.target.position.set(
+                ...geom
+                    .analyzeGeometryCenter(terrain2Result.geometry)
+                    .toArray(),
+            )
+            this.dirLight.target.updateMatrixWorld()
         } catch (error) {
             console.error("Error loading terrains:", error)
         }
@@ -233,9 +251,9 @@ class SceneManager {
         // Use composer instead of renderer
         this.composer.render()
 
-        this.cube.rotation.x += 0.25 * delta * 0.25
-        this.cube.rotation.y += 2 * delta * 0.25
-        this.cube.rotation.z += 1 * delta * 0.25
+        // this.cube.rotation.x += 0.25 * delta * 0.25
+        // this.cube.rotation.y += 2 * delta * 0.25
+        // this.cube.rotation.z += 1 * delta * 0.25
     }
 
     public dispose(): void {
@@ -245,6 +263,30 @@ class SceneManager {
         this.composer.dispose()
         this.stats.dom.remove()
     }
+
+    public placeSun(datetime: Date, distance: number = 17500): void {
+        // Fixed coordinates for the location
+        const latitude = 38.76235738417227
+        const longitude = 23.54701276527263
+
+        // Get sun position from SunCalc
+        const sunPosition = SunCalc.getPosition(datetime, latitude, longitude)
+
+        // Convert to three.js coordinates, rotating around current target
+        const phi = Math.PI / 2 - sunPosition.altitude
+        const theta = sunPosition.azimuth // Removed the PI offset
+
+        // Get the target position
+        const targetPos = this.dirLight.target.position
+
+        // Convert spherical coordinates to cartesian, relative to target
+        const x = targetPos.x + distance * Math.sin(phi) * Math.cos(theta)
+        const y = targetPos.y + distance * Math.cos(phi)
+        const z = targetPos.z - distance * Math.sin(phi) * Math.sin(theta) // Negated Z
+
+        // Position the light
+        this.dirLight.position.set(x, y, z)
+    }
 }
 
-globalThis.s = new SceneManager()
+globalThis.globalThis.s = new SceneManager()
