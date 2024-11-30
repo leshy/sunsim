@@ -230,7 +230,7 @@ class SceneManager {
         try {
             const terrain2Result = await renderTiff("elevationHighres.tiff", {
                 zScale: 1,
-                textureUrl: "elevationHighres4.jpg",
+                textureUrl: "elevationHighres.jpg",
                 bumpmapUrl: "elevationHighresBump.jpg",
                 wireframe: false,
             })
