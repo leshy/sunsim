@@ -9,6 +9,10 @@ import { ShaderPass } from "npm:three/addons/postprocessing/ShaderPass.js"
 import { FXAAShader } from "npm:three/addons/shaders/FXAAShader.js"
 import { GammaCorrectionShader } from "npm:three/addons/shaders/GammaCorrectionShader.js"
 
+import * as dftz from "npm:date-fns-tz"
+
+import GUI from "npm:lil-gui"
+
 import { renderTiff } from "./tiff.ts"
 import * as stitch from "./tiffstitch.ts"
 import * as geom from "./tiffgeom.ts"
@@ -16,11 +20,38 @@ import * as SunCalc from "npm:suncalc"
 import * as df from "npm:date-fns"
 
 window.df = df
-
 window.stitch = stitch
 window.geom = geom
 
 globalThis.THREE = THREE
+
+function dateForTz(hour: number, month: number): Date {
+    const year = new Date().getFullYear()
+
+    // Extract minutes from hour decimal
+    const wholeHour = Math.floor(hour)
+    const minutes = Math.round((hour - wholeHour) * 60)
+
+    // Extract days from month decimal (1-based)
+    const wholeMonth = Math.floor(month)
+    const days = Math.floor(
+        (month - wholeMonth) * new Date(year, wholeMonth, 0).getDate(),
+    ) + 1
+
+    const dateString = `${year}-${wholeMonth.toString().padStart(2, "0")}-${
+        days
+            .toString()
+            .padStart(2, "0")
+    } ${wholeHour.toString().padStart(2, "0")}:${
+        minutes
+            .toString()
+            .padStart(2, "0")
+    }:00`
+
+    console.log(dateString)
+
+    return dftz.fromZonedTime(new Date(dateString), "Europe/Athens")
+}
 
 class SceneManager {
     private camera: THREE.PerspectiveCamera
@@ -34,6 +65,7 @@ class SceneManager {
     private cube: THREE.Mesh
     private readonly SUN_RADIUS: number = 15000
     private controls: OrbitControls
+    private sunSphere: THREE.Mesh
 
     constructor() {
         this.init()
@@ -44,12 +76,27 @@ class SceneManager {
         this.initRenderer()
         this.initPostProcessing()
         this.initControls()
+        this.initGUI()
         this.initStats()
 
         document.body.appendChild(this.renderer.domElement)
         window.addEventListener("resize", () => this.onWindowResize())
     }
+    private initGUI(): void {
+        const gui = new GUI()
+        const params = {
+            hour: 12,
+            month: 6,
+        }
 
+        gui.add(params, "hour", 0, 24).onChange((hour: number) => {
+            this.sun(hour, params.month)
+        })
+
+        gui.add(params, "month", 1, 12).onChange((month: number) => {
+            this.sun(params.hour, month)
+        })
+    }
     private initScene(): void {
         this.camera = new THREE.PerspectiveCamera(
             45,
@@ -64,7 +111,8 @@ class SceneManager {
         //this.scene.fog = new THREE.Fog(0xcccccc, 100, 15000)
 
         this.setupLights()
-        this.setupGeometry()
+        this.createSunSphere()
+        // this.setupGeometry()
         this.loadTerrains()
     }
 
@@ -114,20 +162,53 @@ class SceneManager {
         this.configureDirectionalLight()
 
         this.scene.add(this.dirLight)
-        this.scene.add(new THREE.CameraHelper(this.dirLight.shadow.camera))
+        // this.scene.add(new THREE.CameraHelper(this.dirLight.shadow.camera))
     }
 
-    private configureDirectionalLight(): void {
-        const thicc = 2000
-        this.dirLight.castShadow = true
-        this.dirLight.shadow.camera.near = 1
-        this.dirLight.shadow.camera.far = 25000
+    public shadowThicc(thicc: number = 10000) {
         this.dirLight.shadow.camera.right = thicc
         this.dirLight.shadow.camera.left = -thicc
         this.dirLight.shadow.camera.top = thicc
         this.dirLight.shadow.camera.bottom = -thicc
-        this.dirLight.shadow.mapSize.width = 1024 * 4
-        this.dirLight.shadow.mapSize.height = 1024 * 4
+    }
+
+    private configureDirectionalLight(): void {
+        this.dirLight.castShadow = true
+        this.dirLight.shadow.camera.near = 1
+        this.dirLight.shadow.camera.far = 30000
+        this.dirLight.shadow.mapSize.width = 1024 * 6
+        this.dirLight.shadow.mapSize.height = 1024 * 6
+        this.shadowThicc(3000)
+    }
+
+    private createSunSphere() {
+        // Create the main sun
+        const sunMaterial = new THREE.MeshStandardMaterial({
+            color: 0xffff00,
+            emissive: 0xffff00,
+            emissiveIntensity: 1,
+            toneMapped: false,
+        })
+        const sunGeometry = new THREE.SphereGeometry(750, 32, 32)
+        const sunSphere = new THREE.Mesh(sunGeometry, sunMaterial)
+        sunSphere.castShadow = false
+        sunSphere.receiveShadow = false
+
+        // Create glow effect using a larger sphere with transparent material
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffff00,
+            transparent: true,
+            opacity: 0.15,
+            side: THREE.BackSide,
+        })
+        const glowGeometry = new THREE.SphereGeometry(850, 32, 32)
+        const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial)
+        sunSphere.add(glowMesh) // Add glow as child of sun
+
+        // Store reference and add to scene
+        this.sunSphere = sunSphere
+        this.scene.add(sunSphere)
+        this.sun(8, 7)
     }
 
     private setupGeometry(): void {
@@ -138,11 +219,11 @@ class SceneManager {
         })
 
         const geometry = new THREE.BoxGeometry(100, 100, 100)
-        // this.cube = new THREE.Mesh(geometry, material)
-        // this.cube.position.set(-2000, 1200, 200)
-        // this.cube.castShadow = true
-        // this.cube.receiveShadow = true
-        //this.scene.add(this.cube)
+        this.cube = new THREE.Mesh(geometry, material)
+        this.cube.position.set(-2000, 1200, 200)
+        this.cube.castShadow = true
+        this.cube.receiveShadow = true
+        this.scene.add(this.cube)
     }
 
     private async loadTerrains(): Promise<void> {
@@ -264,29 +345,39 @@ class SceneManager {
         this.stats.dom.remove()
     }
 
+    public sun(hour: number, month: number): void {
+        const date = dateForTz(hour, month)
+        console.log(date)
+
+        this.placeSun(date)
+    }
+
     public placeSun(datetime: Date, distance: number = 17500): void {
         // Fixed coordinates for the location
-        const latitude = 38.76235738417227
-        const longitude = 23.54701276527263
+        const latitude = 38.5038463475032
+        const longitude = 24.00044844431349
 
         // Get sun position from SunCalc
         const sunPosition = SunCalc.getPosition(datetime, latitude, longitude)
+        console.log("sunPos", sunPosition)
 
         // Convert to three.js coordinates, rotating around current target
-        const phi = Math.PI / 2 - sunPosition.altitude
-        const theta = sunPosition.azimuth // Removed the PI offset
+        const phi = Math.PI / 2 - sunPosition.altitude // Angle from zenith
+        const theta = sunPosition.azimuth // Azimuth from south
 
         // Get the target position
         const targetPos = this.dirLight.target.position
 
         // Convert spherical coordinates to cartesian, relative to target
-        const x = targetPos.x + distance * Math.sin(phi) * Math.cos(theta)
-        const y = targetPos.y + distance * Math.cos(phi)
-        const z = targetPos.z - distance * Math.sin(phi) * Math.sin(theta) // Negated Z
+        // X = East (positive), Y = North (positive), Z = Up
+        const x = targetPos.x - distance * Math.sin(phi) * Math.sin(theta) // Negated for correct East/West
+        const y = targetPos.y - distance * Math.sin(phi) * Math.cos(theta) // North component
+        const z = targetPos.z + distance * Math.cos(phi) // Up component
 
         // Position the light
         this.dirLight.position.set(x, y, z)
+        this.sunSphere.position.copy(this.dirLight.position)
     }
 }
 
-globalThis.globalThis.s = new SceneManager()
+globalThis.s = new SceneManager()
