@@ -3,10 +3,7 @@ import Stats from "npm:three/addons/libs/stats.module.js"
 import { OrbitControls } from "npm:three/addons/controls/OrbitControls.js"
 import { EffectComposer } from "npm:three/addons/postprocessing/EffectComposer.js"
 import { RenderPass } from "npm:three/addons/postprocessing/RenderPass.js"
-import { UnrealBloomPass } from "npm:three/addons/postprocessing/UnrealBloomPass.js"
-import { FilmPass } from "npm:three/addons/postprocessing/FilmPass.js"
 import { ShaderPass } from "npm:three/addons/postprocessing/ShaderPass.js"
-import { FXAAShader } from "npm:three/addons/shaders/FXAAShader.js"
 import { GammaCorrectionShader } from "npm:three/addons/shaders/GammaCorrectionShader.js"
 
 import * as dftz from "npm:date-fns-tz"
@@ -77,15 +74,16 @@ class SceneManager {
         this.initPostProcessing()
         this.initControls()
         this.initGUI()
-        this.initStats()
+        //this.initStats()
 
         document.body.appendChild(this.renderer.domElement)
         window.addEventListener("resize", () => this.onWindowResize())
     }
     private initGUI(): void {
         const gui = new GUI()
+
         const params = {
-            hour: 12,
+            hour: 8,
             month: 6,
         }
 
@@ -104,7 +102,9 @@ class SceneManager {
             20,
             100000,
         )
-        this.camera.position.set(0, 0, 12500)
+
+        // this.camera.position.set(0, 0, 5000)
+        this.camera.position.set(-2500, 1600, 500)
         this.camera.up.set(0, 0, 1)
 
         this.scene = new THREE.Scene()
@@ -123,29 +123,6 @@ class SceneManager {
         const renderPass = new RenderPass(this.scene, this.camera)
         this.composer.addPass(renderPass)
 
-        // Bloom effect
-        // const bloomPass = new UnrealBloomPass(
-        //     new THREE.Vector2(window.innerWidth, window.innerHeight),
-        //     1.0,
-        //     0.4,
-        //     0.85,
-        // )
-        // this.composer.addPass(bloomPass)
-
-        // Film grain effect
-        //const filmPass = new FilmPass(0.35, 0.025, 648, false)
-        //this.composer.addPass(filmPass)
-
-        // FXAA anti-aliasing
-        // const fxaaPass = new ShaderPass(FXAAShader)
-        // fxaaPass.material.uniforms["resolution"].value.set(
-        //     1 / window.innerWidth,
-        //     1 / window.innerHeight,
-        // )
-        // //fxaaPass.uniforms["gamma"].value = 0.85 // Adjust this value to control brightness
-        // window.fxaa = fxaaPass
-        //this.composer.addPass(fxaaPass)
-
         // FXAA anti-aliasing
         const gammaPass = new ShaderPass(GammaCorrectionShader)
         this.composer.addPass(gammaPass)
@@ -157,7 +134,7 @@ class SceneManager {
 
         this.dirLight = new THREE.DirectionalLight(0xffeecc, 4)
         this.dirLight.name = "Dir. Light"
-        //        this.dirLight.position.set(15000, -15000, 5000)
+
         this.dirLight.position.set(12000, 8000, 6000)
         this.configureDirectionalLight()
 
@@ -208,7 +185,7 @@ class SceneManager {
         // Store reference and add to scene
         this.sunSphere = sunSphere
         this.scene.add(sunSphere)
-        this.sun(8, 7)
+        this.sun(8, 6)
     }
 
     private setupGeometry(): void {
@@ -292,7 +269,7 @@ class SceneManager {
             this.renderer.domElement,
         )
 
-        this.controls.target.set(-2220, 1370, -44)
+        this.controls.target.set(-2182, 1450, 100)
         this.controls.update()
     }
 
@@ -323,7 +300,7 @@ class SceneManager {
 
     private animate(): void {
         this.render()
-        this.stats.update()
+        //this.stats.update()
     }
 
     private render(): void {
@@ -347,8 +324,6 @@ class SceneManager {
 
     public sun(hour: number, month: number): void {
         const date = dateForTz(hour, month)
-        console.log(date)
-
         this.placeSun(date)
     }
 
@@ -360,6 +335,11 @@ class SceneManager {
         // Get sun position from SunCalc
         const sunPosition = SunCalc.getPosition(datetime, latitude, longitude)
         console.log("sunPos", sunPosition)
+        if (sunPosition.altitude < 0) {
+            this.dirLight.intensity = 0
+        } else {
+            this.dirLight.intensity = 4
+        }
 
         // Convert to three.js coordinates, rotating around current target
         const phi = Math.PI / 2 - sunPosition.altitude // Angle from zenith

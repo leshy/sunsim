@@ -1,5 +1,6 @@
 {
     "tasks": {
+        "deploy": "rscp static/* lsh.red:www/sunsim/",
         "dev": "deno run --watch main.ts",
         "fmt": "deno fmt",
         "test": "deno test -A --parallel",

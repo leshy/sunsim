@@ -147,16 +147,17 @@ export async function renderTiff(
         const seaBumpTexture = textureLoader.load("seaBump.jpg")
         seaBumpTexture.wrapS = THREE.RepeatWrapping
         seaBumpTexture.wrapT = THREE.RepeatWrapping
-        seaBumpTexture.repeat.set(5, 5) // Adjust tiling frequency (4x4 as an example)
+        seaBumpTexture.repeat.set(6, 6) // Adjust tiling frequency (4x4 as an example)
 
         const seaLevelMaterial = new THREE.MeshPhongMaterial({
             //color: 0x5085aa, // Blue for sea
+            color: 0xa7c2d4,
             bumpScale: 2,
             shininess: 150,
-            opacity: 0.5, // Slight transparency
+            opacity: 1, // Slight transparency
             transparent: true,
             ...getTextureBumpamp(opts),
-            //bumpMap: seaBumpTexture,
+            bumpMap: seaBumpTexture,
         })
 
         const seaLevelMesh = new THREE.Mesh(seaLevelGeometry, seaLevelMaterial)
