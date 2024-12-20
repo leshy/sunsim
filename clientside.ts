@@ -104,8 +104,16 @@ class SceneManager {
         )
 
         // this.camera.position.set(0, 0, 5000)
-        this.camera.position.set(-2500, 1600, 500)
+        // {x: -2391.387318298076, y: 1587.006536717429, z: 354.7119119166602}
+        // {x: -2335.502264396651, y: 1552.2105004000807, z: 290.32011483609733}
+        this.camera.position.set(
+            -2335.502264396651,
+            1552.2105004000807,
+            290.32011483609733,
+        )
         this.camera.up.set(0, 0, 1)
+
+        window.camera = this.camera
 
         this.scene = new THREE.Scene()
         //this.scene.fog = new THREE.Fog(0xcccccc, 100, 15000)
@@ -124,12 +132,12 @@ class SceneManager {
         this.composer.addPass(renderPass)
 
         // FXAA anti-aliasing
-        const gammaPass = new ShaderPass(GammaCorrectionShader)
-        this.composer.addPass(gammaPass)
+        //const gammaPass = new ShaderPass(GammaCorrectionShader)
+        //this.composer.addPass(gammaPass)
     }
 
     private setupLights(): void {
-        this.ambientLight = new THREE.AmbientLight(0x404040, 2)
+        this.ambientLight = new THREE.AmbientLight(0xffeecc, 0.25)
         this.scene.add(this.ambientLight)
 
         this.dirLight = new THREE.DirectionalLight(0xffeecc, 4)
@@ -216,7 +224,7 @@ class SceneManager {
                 zScale: 1,
                 textureUrl: "elevation.jpg",
                 bumpmapUrl: "elevationBump.jpg",
-                genSea: true,
+                genSea: false,
                 overlapGeometry: terrain2Result,
                 overlapZoffset: -45,
                 wireframe: false,

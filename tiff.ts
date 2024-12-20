@@ -1,6 +1,4 @@
 import * as THREE from "npm:three"
-import * as overlap from "./overlap.ts"
-import * as stitch from "./tiffstitch.ts"
 
 import { fromArrayBuffer, GeoTIFF, GeoTIFFImage } from "npm:geotiff"
 
@@ -108,12 +106,11 @@ export async function renderTiff(
         // //    ret.geometry,
         // //    opts.overlapGeometry.terrain,
         // //)
-        // console.log("OK YO")
     }
 
     if (opts.wireframe) {
         ret.material = new THREE.MeshBasicMaterial({
-            color: 0x00ff00,
+            color: 0xffffff,
             wireframe: true,
         })
     } else {
