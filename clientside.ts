@@ -10,6 +10,7 @@ import * as dftz from "npm:date-fns-tz"
 import GUI from "npm:lil-gui"
 
 import { renderTiff } from "./tiff/tiff.ts"
+import * as geom from "./tiff/tiffgeom.ts"
 import * as SunCalc from "npm:suncalc"
 import * as df from "npm:date-fns"
 

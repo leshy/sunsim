@@ -51489,6 +51489,21 @@ async function createElevationGeometry(image, scale = 1) {
   geometry.computeVertexNormals();
   return geometry;
 }
+function analyzeGeometryCenter(geometry) {
+  const positions = geometry.getAttribute("position");
+  const center = new Vector3();
+  for (let i = 0; i < positions.count; i++) {
+    center.add(
+      new Vector3(
+        positions.getX(i),
+        positions.getY(i),
+        positions.getZ(i)
+      )
+    );
+  }
+  center.divideScalar(positions.count);
+  return center;
+}
 
 // tiff/tiff.ts
 var textureLoader = new TextureLoader();
@@ -51553,7 +51568,7 @@ async function renderTiff(url, opts = {}) {
       image.getWidth(),
       image.getHeight()
     );
-    const seaBumpTexture = textureLoader.load("seaBump.jpg");
+    const seaBumpTexture = textureLoader.load("data/seaBump.jpg");
     seaBumpTexture.wrapS = RepeatWrapping;
     seaBumpTexture.wrapT = RepeatWrapping;
     seaBumpTexture.repeat.set(6, 6);
@@ -51749,7 +51764,7 @@ var SceneManager = class {
       window.terrain1 = terrain1Result;
       window.terrain2 = terrain2Result;
       this.dirLight.target.position.set(
-        ...geom.analyzeGeometryCenter(terrain2Result.geometry).toArray()
+        ...analyzeGeometryCenter(terrain2Result.geometry).toArray()
       );
       this.dirLight.target.updateMatrixWorld();
     } catch (error) {

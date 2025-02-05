@@ -117,7 +117,7 @@ export async function renderTiff(
             image.getHeight(),
         )
 
-        const seaBumpTexture = textureLoader.load("seaBump.jpg")
+        const seaBumpTexture = textureLoader.load("data/seaBump.jpg")
         seaBumpTexture.wrapS = THREE.RepeatWrapping
         seaBumpTexture.wrapT = THREE.RepeatWrapping
         seaBumpTexture.repeat.set(6, 6) // Adjust tiling frequency (4x4 as an example)
