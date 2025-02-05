@@ -4,21 +4,16 @@ import { OrbitControls } from "npm:three/addons/controls/OrbitControls.js"
 import { EffectComposer } from "npm:three/addons/postprocessing/EffectComposer.js"
 import { RenderPass } from "npm:three/addons/postprocessing/RenderPass.js"
 import { ShaderPass } from "npm:three/addons/postprocessing/ShaderPass.js"
-import { GammaCorrectionShader } from "npm:three/addons/shaders/GammaCorrectionShader.js"
 
 import * as dftz from "npm:date-fns-tz"
 
 import GUI from "npm:lil-gui"
 
-import { renderTiff } from "./tiff.ts"
-import * as stitch from "./tiffstitch.ts"
-import * as geom from "./tiffgeom.ts"
+import { renderTiff } from "./tiff/tiff.ts"
 import * as SunCalc from "npm:suncalc"
 import * as df from "npm:date-fns"
 
 window.df = df
-window.stitch = stitch
-window.geom = geom
 
 globalThis.THREE = THREE
 
@@ -213,18 +208,21 @@ class SceneManager {
 
     private async loadTerrains(): Promise<void> {
         try {
-            const terrain2Result = await renderTiff("elevationHighres.tiff", {
-                zScale: 1,
-                textureUrl: "elevationHighres.jpg",
-                bumpmapUrl: "elevationHighresBump.jpg",
-                wireframe: false,
-            })
+            const terrain2Result = await renderTiff(
+                "data/elevationHighres.tiff",
+                {
+                    zScale: 1,
+                    textureUrl: "data/elevationHighres.jpg",
+                    bumpmapUrl: "data/elevationHighresBump.jpg",
+                    wireframe: false,
+                },
+            )
 
-            const terrain1Result = await renderTiff("elevationHole.tiff", {
+            const terrain1Result = await renderTiff("data/elevationHole.tiff", {
                 zScale: 1,
-                textureUrl: "elevation.jpg",
-                bumpmapUrl: "elevationBump.jpg",
-                genSea: false,
+                textureUrl: "data/elevation.jpg",
+                bumpmapUrl: "data/elevationBump.jpg",
+                genSea: true,
                 overlapGeometry: terrain2Result,
                 overlapZoffset: -45,
                 wireframe: false,

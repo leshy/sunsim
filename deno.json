@@ -1,12 +1,8 @@
 {
     "tasks": {
-        "deploy": "rscp static/* lsh.red:www/sunsim/",
-        "dev": "deno run --watch main.ts",
-        "fmt": "deno fmt",
-        "test": "deno test -A --parallel",
-        "lint": "deno lint",
-        "checkall": "deno task fmt --check && deno task lint && deno task test",
-        "bundle": "deno run -A bundle.ts"
+        "server": "deno run --allow-net --allow-read --allow-sys https://deno.land/std/http/file_server.ts static",
+        "checkall": "deno task fmt --check && deno task lint",
+        "build": "deno run -A build.ts"
     },
     "imports": {
         "@jspm/core": "npm:@jspm/core@^2.1.0",

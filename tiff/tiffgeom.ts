@@ -1,54 +1,6 @@
 import * as THREE from "npm:three"
 import { GeoTIFFImage, ReadRasterResult } from "npm:geotiff"
 
-export function analyzeGeometryCenter(
-    geometry: THREE.BufferGeometry,
-): THREE.Vector3 {
-    const positions = geometry.getAttribute("position")
-    const center = new THREE.Vector3()
-
-    // Calculate center
-    for (let i = 0; i < positions.count; i++) {
-        center.add(
-            new THREE.Vector3(
-                positions.getX(i),
-                positions.getY(i),
-                positions.getZ(i),
-            ),
-        )
-    }
-
-    center.divideScalar(positions.count)
-    return center
-}
-
-export function alignMeshes(
-    sourceTiff: GeoTIFFImage,
-    targetTiff: GeoTIFFImage,
-    meshToTransform: THREE.Mesh,
-): void {
-    // Get bounding boxes
-    const [srcMinX, srcMinY, srcMaxX, srcMaxY] = sourceTiff.getBoundingBox()
-    const [tgtMinX, tgtMinY, tgtMaxX, tgtMaxY] = targetTiff.getBoundingBox()
-
-    // Calculate centers
-    const srcCenterX = (srcMaxX + srcMinX) / 2
-    const srcCenterY = (srcMaxY + srcMinY) / 2
-    const tgtCenterX = (tgtMaxX + tgtMinX) / 2
-    const tgtCenterY = (tgtMaxY + tgtMinY) / 2
-
-    // Calculate offset from target to source
-    const offsetX = tgtCenterX - srcCenterX
-    const offsetY = tgtCenterY - srcCenterY
-
-    // Create transformation matrix
-    const matrix = new THREE.Matrix4().makeTranslation(offsetX, offsetY, 0)
-
-    // Apply to mesh's matrix
-    meshToTransform.matrix.copy(matrix)
-    meshToTransform.matrixAutoUpdate = false
-}
-
 export function alignGeometries(
     sourceTiff: GeoTIFFImage,
     targetTiff: GeoTIFFImage,
@@ -87,7 +39,6 @@ export function alignGeometries(
 export async function createElevationGeometry(
     image: GeoTIFFImage,
     scale: number = 1,
-    referenceImage?: GeoTIFFImage,
 ): THREE.BufferGeometry {
     const width = image.getWidth()
     const height = image.getHeight()
